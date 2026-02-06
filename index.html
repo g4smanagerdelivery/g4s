@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>G4S Инкассационная доставка</title>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
+import {
+  getFirestore, doc, setDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
+  authDomain: "auction-top7.firebaseapp.com",
+  projectId: "auction-top7",
+  storageBucket: "auction-top7.firebasestorage.app",
+  messagingSenderId: "73096110012",
+  appId: "1:73096110012:web:8f014f6faae5d08bd455b9"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const params = new URLSearchParams(location.search);
+const userId = decodeURIComponent(params.get("user") || "");
+const isAdminParam = params.get("admin") === "true";
+
+const ADMIN_PASSWORD = "123456";
+let isAdmin = false;
+let endTime = null;
+
+if (isAdminParam) {
+  const p = prompt("Пароль администратора");
+  if (p === ADMIN_PASSWORD) isAdmin = true;
+  else throw new Error("Access denied");
+}
+
+window.onload = () => {
+  const admin = document.getElementById("admin");
+  const view = document.getElementById("view");
+
+  if (isAdmin) admin.style.display = "block";
+
+  if (userId) {
+    const ref = doc(db, "investors", userId);
+
+    onSnapshot(ref, (snap) => {
+      if (!snap.exists()) {
+        view.innerHTML = "<h1>Данные не найдены</h1>";
+        return;
+      }
+
+      const d = snap.data();
+      endTime = new Date(d.endTime);
+
+      view.innerHTML = `
+        <div class="card">
+          <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+
+          <h3>ФИО:</h3>
+          <p class="fio">${d.name}</p>
+
+          <h3>Примерное время прибытия:</h3>
+          <p id="time" class="timer">--:--:--</p>
+
+          <h3>Информация о доставке:</h3>
+          <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
+        </div>
+      `;
+    });
+  }
+
+  setInterval(updateTimer, 1000);
+};
+
+function updateTimer() {
+  if (!endTime) return;
+  const diff = Math.max(0, endTime - new Date());
+  const h = Math.floor(diff / 36e5);
+  const m = Math.floor(diff % 36e5 / 6e4);
+  const s = Math.floor(diff % 6e4 / 1000);
+
+  const timeEl = document.getElementById("time");
+  if (timeEl) {
+    timeEl.textContent = `${h}ч ${m}м ${s}с`;
+    timeEl.style.color = h < 5 ? "red" : "black";
+  }
+}
+
+window.saveUser = async () => {
+  const id = uid.value;
+  const name = uname.value;
+  const t = endInput.value;
+  const info = uinfo.value;
+
+  if (!id || !name || !t) {
+    alert("Заполни ID, ФИО и время");
+    return;
+  }
+
+  await setDoc(doc(db, "investors", id), {
+    name: name,
+    endTime: new Date(t).toISOString(),
+    info: info || "—"
+  });
+
+  const link =
+    location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+
+  navigator.clipboard.writeText(link).then(() => {
+    alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
+  });
+};
+</script>
+
+<style>
+/* ======== ПРАВИЛЬНОЕ ЗАМОЩЕНИЕ G4S ПО ВСЕМУ ЭКРАНУ ======== */
+body {
+  font-family: Arial;
+  background-color: #f2f2f2;
+
+  /* ПОВТОРЯЮЩИЙСЯ SVG-ПАТТЕРН С G4S */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Ctext x='20' y='80' font-size='32' font-weight='bold' fill='rgba(0,0,0,0.05)' transform='rotate(-20 100 60)'%3EG4S%3C/text%3E%3C/svg%3E");
+
+  background-repeat: repeat;
+  background-size: 200px 120px;
+
+  padding: 30px;
+  text-align: center;
+}
+
+/* ======== КАРТОЧКА ======== */
+.card {
+  background: white;
+  max-width: 700px;
+  margin: auto;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+.fio {
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.timer {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.info-box {
+  background: #f3f3f3;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 10px 0;
+  text-align: left;
+  font-size: 32px !important;   /* ← ВАЖНО: добавили !important */
+}
+
+/* ======== АДМИНКА ======== */
+#admin {
+  display: none;
+  margin-top: 30px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#admin input, #admin textarea {
+  width: 100%;
+  margin: 5px 0;
+  padding: 8px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="view">
+  <h1>Загрузка…</h1>
+</div>
+
+<div id="admin">
+  <h2>Админ-панель</h2>
+
+  <input id="uid" placeholder="ID (tuman)">
+  <input id="uname" placeholder="ФИО">
+  <input type="datetime-local" id="endInput">
+  <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
+  <button onclick="saveUser()">Сохранить</button>
+</div>
+
+</body>
+</html>
