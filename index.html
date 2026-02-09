@@ -35,7 +35,7 @@ let endTime = null;
 let map, marker, routeLine;
 let route = [];
 
-// ======== ГЕОКОДИНГ С ЗАЩИТОЙ ОТ ОШИБОК ========
+// ======== ГЕОКОДИНГ (с защитой от ошибок) ========
 async function geocodeCity(city) {
   try {
     const url =
@@ -50,20 +50,19 @@ async function geocodeCity(city) {
     });
 
     const data = await res.json();
-
     if (!data || data.length === 0) return null;
 
     return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
   } catch (e) {
-    console.warn("Геокодинг не сработал, ставим запасные координаты:", city);
+    console.warn("Геокодинг не сработал:", e);
     return null;
   }
 }
 
-// запасные координаты (чтобы ВСЕГДА сохранялось)
+// запасные координаты (если поиск не сработает)
 const FALLBACK_CITIES = {
   "астана": [51.1605, 71.4704],
-  "караганда": [49.8028, 73.0872],
+  "караганды": [49.8028, 73.0872],
   "алматы": [43.2220, 76.8512]
 };
 
@@ -77,8 +76,12 @@ if (isAdminParam) {
 window.onload = () => {
   const admin = document.getElementById("admin");
   const view = document.getElementById("view");
+  const saveBtn = document.getElementById("saveBtn");
 
   if (isAdmin) admin.style.display = "block";
+
+  // ВАЖНО: теперь кнопка работает через addEventListener
+  saveBtn.addEventListener("click", saveUser);
 
   // Карта по умолчанию — Казахстан
   map = L.map("map").setView([48.0196, 66.9237], 5);
@@ -114,7 +117,7 @@ window.onload = () => {
         <div class="card">
           <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-          <h3>Получатель:</h3>
+          <h3>ФИО:</h3>
           <p class="fio">${d.name}</p>
 
           <h3>Откуда:</h3>
@@ -157,7 +160,7 @@ function updateTimer() {
 function updateMapPosition() {
   if (!endTime || route.length < 2) return;
 
-  const totalTime = 60 * 60 * 1000; // 1 час на маршрут
+  const totalTime = 60 * 60 * 1000;
   const elapsed = totalTime - Math.max(0, endTime - new Date());
   const progress = Math.min(1, elapsed / totalTime);
 
@@ -165,8 +168,11 @@ function updateMapPosition() {
   marker.setLatLng(route[index]);
 }
 
-// ======== СОХРАНЕНИЕ (ТЕПЕРЬ ВСЕГДА РАБОТАЕТ) ========
-window.saveUser = async () => {
+// ======== СОХРАНЕНИЕ (ТЕПЕРЬ 100% РАБОТАЕТ НА GITHUB PAGES) ========
+async function saveUser() {
+  const status = document.getElementById("status");
+  status.textContent = "Сохраняю... ⏳";
+
   const id = uid.value.trim();
   const name = uname.value.trim();
   const t = endInput.value;
@@ -176,14 +182,13 @@ window.saveUser = async () => {
 
   if (!id || !name || !t || !fromCity || !toCity) {
     alert("Заполни ID, ФИО, время, Откуда и Куда (города)");
+    status.textContent = "";
     return;
   }
 
-  // ищем координаты
   let fromCoords = await geocodeCity(fromCity);
   let toCoords = await geocodeCity(toCity);
 
-  // если не нашли — берём запасные
   if (!fromCoords) {
     fromCoords =
       FALLBACK_CITIES[fromCity.toLowerCase()] || [48.0196, 66.9237];
@@ -204,14 +209,14 @@ window.saveUser = async () => {
     route: route
   });
 
-  // ПРАВИЛЬНАЯ ССЫЛКА
   const base = "https://g4smanagerdelivery.github.io/g4s/";
   const link = base + "?user=" + encodeURIComponent(id);
 
   await navigator.clipboard.writeText(link);
 
+  status.textContent = "Сохранено ✅";
   alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
-};
+}
 </script>
 
 <style>
@@ -267,11 +272,12 @@ body {
   <input id="toCityInput" placeholder="Куда (например: Караганды)">
 
   <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
-  <button onclick="saveUser()">Сохранить</button>
+
+  <button id="saveBtn">Сохранить</button>
+  <p id="status" style="color: green; font-weight: bold;"></p>
 </div>
 
 <div id="map" style="height: 450px; margin-top: 20px;"></div>
 
 </body>
 </html>
-
