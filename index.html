@@ -63,11 +63,12 @@ body {
 
 <div id="map" style="height: 450px; margin-top: 20px;"></div>
 
+<!-- Firebase и Leaflet -->
+<script src="https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
+<script>
 const firebaseConfig = {
   apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
   authDomain: "auction-top7.firebaseapp.com",
@@ -77,14 +78,14 @@ const firebaseConfig = {
   appId: "1:73096110012:web:8f014f6faae5d08bd455b9"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 const isAdminParam = params.get("admin") === "true";
-
 const ADMIN_PASSWORD = "123456";
+
 let isAdmin = false;
 let endTime = null;
 let map, marker, routeLine;
@@ -105,7 +106,7 @@ async function geocodeCity(city) {
     if (!data || data.length === 0) return null;
     return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
   } catch(e) {
-    console.warn("Геокодинг не сработал, ставим запасные координаты:", city);
+    console.warn("Геокодинг не сработал:", city);
     return null;
   }
 }
@@ -117,7 +118,7 @@ if (isAdminParam) {
   else alert("Доступ запрещён");
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+window.onload = () => {
   const adminDiv = document.getElementById("admin");
   const view = document.getElementById("view");
 
@@ -133,13 +134,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // Просмотр по ID
   if (userId) {
-    const ref = doc(db, "investors", userId);
-    onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
+    const ref = db.collection("investors").doc(userId);
+    ref.onSnapshot((snap) => {
+      if (!snap.exists) {
         view.innerHTML = "<h1>Данные не найдены</h1>";
         return;
       }
-
       const d = snap.data();
       endTime = new Date(d.endTime);
       route = d.route || [];
@@ -154,35 +154,20 @@ window.addEventListener("DOMContentLoaded", () => {
       view.innerHTML = `
         <div class="card">
           <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
-
-          <h3>Получатель:</h3>
-          <p class="fio">${d.name}</p>
-
-          <h3>Откуда:</h3>
-          <p>${d.fromCity}</p>
-
-          <h3>Куда:</h3>
-          <p>${d.toCity}</p>
-
-          <h3>Примерное время прибытия:</h3>
-          <p id="time" class="timer">--:--:--</p>
-
-          <h3>Информация о доставке:</h3>
-          <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
-
-          <div id="map" style="height: 400px; margin-top: 20px;"></div>
+          <h3>Получатель:</h3><p>${d.name}</p>
+          <h3>Откуда:</h3><p>${d.fromCity}</p>
+          <h3>Куда:</h3><p>${d.toCity}</p>
+          <h3>Примерное время прибытия:</h3><p id="time">--:--:--</p>
+          <h3>Информация о доставке:</h3><div>${(d.info||"").replace(/\n/g,"<br>")}</div>
         </div>
       `;
     });
   }
 
-  setInterval(() => {
-    updateTimer();
-    updateMapPosition();
-  }, 1000);
+  setInterval(() => { updateTimer(); updateMapPosition(); }, 1000);
 
   // ===== Сохранение =====
-  document.getElementById("saveBtn").addEventListener("click", async () => {
+  document.getElementById("saveBtn").onclick = async () => {
     const id = document.getElementById("uid").value.trim();
     const name = document.getElementById("uname").value.trim();
     const t = document.getElementById("endInput").value;
@@ -191,55 +176,49 @@ window.addEventListener("DOMContentLoaded", () => {
     const toCity = document.getElementById("toCityInput").value.trim();
 
     if (!id || !name || !t || !fromCity || !toCity) {
-      alert("Заполните ID, ФИО, время, Откуда и Куда");
+      alert("Заполните все поля!");
       return;
     }
 
     let fromCoords = await geocodeCity(fromCity) || FALLBACK_CITIES[fromCity.toLowerCase()] || [48.0196, 66.9237];
     let toCoords = await geocodeCity(toCity) || FALLBACK_CITIES[toCity.toLowerCase()] || [48.0196, 66.9237];
-    const routeArr = [fromCoords, toCoords];
 
-    await setDoc(doc(db, "investors", id), {
+    await db.collection("investors").doc(id).set({
       name: name,
       endTime: new Date(t).toISOString(),
-      info: info || "—",
-      fromCity: fromCity,
-      toCity: toCity,
-      route: routeArr
+      info: info||"—",
+      fromCity,
+      toCity,
+      route: [fromCoords, toCoords]
     });
 
-    const base = "https://g4smanagerdelivery.github.io/g4s/";
-    const link = base + "?user=" + encodeURIComponent(id);
+    const link = "https://g4smanagerdelivery.github.io/g4s/?user=" + encodeURIComponent(id);
     await navigator.clipboard.writeText(link);
+    alert("Сохранено ✅\nСсылка скопирована:\n" + link);
+  };
+};
 
-    alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
-  });
-
-});
-
-// ===== Таймер и обновление позиции =====
 function updateTimer() {
   if (!endTime) return;
   const diff = Math.max(0, endTime - new Date());
-  const h = Math.floor(diff / 36e5);
-  const m = Math.floor(diff % 36e5 / 6e4);
-  const s = Math.floor(diff % 6e4 / 1000);
-
-  const timeEl = document.getElementById("time");
-  if (timeEl) timeEl.textContent = `${h}ч ${m}м ${s}с`;
+  const h = Math.floor(diff/3600000);
+  const m = Math.floor((diff%3600000)/60000);
+  const s = Math.floor((diff%60000)/1000);
+  const el = document.getElementById("time");
+  if(el) el.textContent = `${h}ч ${m}м ${s}с`;
 }
 
 function updateMapPosition() {
   if (!endTime || route.length < 2) return;
-  const totalTime = 60 * 60 * 1000; // 1 час
+  const totalTime = 60*60*1000;
   const elapsed = totalTime - Math.max(0, endTime - new Date());
-  const progress = Math.min(1, elapsed / totalTime);
-
-  const index = Math.floor(progress * (route.length - 1));
+  const progress = Math.min(1, elapsed/totalTime);
+  const index = Math.floor(progress*(route.length-1));
   marker.setLatLng(route[index]);
 }
 </script>
 
 </body>
 </html>
+
 
