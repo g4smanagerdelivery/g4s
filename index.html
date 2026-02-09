@@ -4,11 +4,9 @@
 <meta charset="UTF-8">
 <title>G4S Инкассационная доставка</title>
 
-<!-- Leaflet (карта) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- Leaflet Routing Machine (прокладка маршрута по дорогам) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
@@ -18,7 +16,6 @@ import {
   getFirestore, doc, setDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
-// ===== FIREBASE =====
 const firebaseConfig = {
   apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
   authDomain: "auction-top7.firebaseapp.com",
@@ -31,7 +28,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// ===== ГОРОДА → КООРДИНАТЫ =====
 const CITY_COORDS = {
   "астана": [51.1605, 71.4704],
   "караганда": [49.8028, 73.0877],
@@ -41,7 +37,6 @@ const CITY_COORDS = {
   "актау": [43.6500, 51.2000]
 };
 
-// ===== ПАРАМЕТРЫ =====
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 const isAdminParam = params.get("admin") === "true";
@@ -50,7 +45,7 @@ const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
 let startTime = null;
-let routeCoords = []; // массив точек маршрута
+let routeCoords = [];
 let carMarker = null;
 let map = null;
 let routeLine = null;
@@ -62,12 +57,8 @@ if (isAdminParam) {
 }
 
 window.onload = () => {
-  const admin = document.getElementById("admin");
-  const view = document.getElementById("view");
-
   if (isAdmin) admin.style.display = "block";
 
-  // ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ (ВАЖНО — она теперь ВСЕГДА видна) =====
   map = L.map("map").setView([48.0196, 66.9237], 5);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -86,13 +77,14 @@ window.onload = () => {
 
     onSnapshot(ref, async (snap) => {
       if (!snap.exists()) {
-        view.innerHTML = "<h1>Данные не найдены</h1>";
+        document.getElementById("info-box").innerHTML =
+          "<h2>Данные не найдены</h2>";
         return;
       }
 
       const d = snap.data();
       endTime = new Date(d.endTime);
-      startTime = new Date(endTime.getTime() - 3 * 60 * 60 * 1000); // 3 часа пути (условно)
+      startTime = new Date(endTime.getTime() - 3 * 60 * 60 * 1000);
 
       const from = (d.fromCity || "").toLowerCase();
       const to = (d.toCity || "").toLowerCase();
@@ -100,10 +92,8 @@ window.onload = () => {
       const startCoords = CITY_COORDS[from] || [48.0196, 66.9237];
       const endCoords = CITY_COORDS[to] || [48.0196, 66.9237];
 
-      // Очищаем старый маршрут
       if (routeLine) map.removeLayer(routeLine);
 
-      // ===== СТРОИМ МАРШРУТ ПО ДОРОГАМ =====
       const router = L.Routing.osrmv1();
 
       router.route(
@@ -128,23 +118,21 @@ window.onload = () => {
         }
       );
 
-      view.innerHTML = `
-        <div class="card">
-          <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+      document.getElementById("info-box").innerHTML = `
+        <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-          <h3>ФИО:</h3>
-          <p class="fio">${d.name}</p>
+        <h3>ФИО:</h3>
+        <p class="fio">${d.name}</p>
 
-          <h3>Примерное время прибытия:</h3>
-          <p id="time" class="timer">--:--:--</p>
+        <h3>Примерное время прибытия:</h3>
+        <p id="time" class="timer">--:--:--</p>
 
-          <h3>Маршрут:</h3>
-          <p><b>Откуда:</b> ${d.fromCity}</p>
-          <p><b>Куда:</b> ${d.toCity}</p>
+        <h3>Маршрут:</h3>
+        <p><b>Откуда:</b> ${d.fromCity}</p>
+        <p><b>Куда:</b> ${d.toCity}</p>
 
-          <h3>Информация о доставке:</h3>
-          <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
-        </div>
+        <h3>Информация о доставке:</h3>
+        <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
       `;
     });
   }
@@ -152,7 +140,6 @@ window.onload = () => {
   setInterval(updateTimerAndCar, 1000);
 };
 
-// ===== ТАЙМЕР + ДВИЖЕНИЕ ПО МАРШРУТУ =====
 function updateTimerAndCar() {
   if (!endTime || routeCoords.length === 0) return;
 
@@ -161,7 +148,6 @@ function updateTimerAndCar() {
   const passed = now - startTime;
   const progress = Math.min(1, Math.max(0, passed / total));
 
-  // Таймер
   const diff = Math.max(0, endTime - now);
   const h = Math.floor(diff / 36e5);
   const m = Math.floor(diff % 36e5 / 6e4);
@@ -173,7 +159,6 @@ function updateTimerAndCar() {
     timeEl.style.color = h < 1 ? "red" : "black";
   }
 
-  // Двигаем машинку по реальному маршруту
   const index = Math.floor(progress * (routeCoords.length - 1));
   const pos = routeCoords[index];
 
@@ -182,7 +167,6 @@ function updateTimerAndCar() {
   }
 }
 
-// ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
 window.saveUser = async () => {
   try {
     const id = uid.value.trim();
@@ -224,54 +208,77 @@ window.saveUser = async () => {
 body {
   font-family: Arial;
   background-color: #f2f2f2;
-  padding: 20px;
-  text-align: center;
+  margin: 0;
+  padding: 0;
 }
 
-#map {
-  height: 450px;      /* ВАЖНО — чтобы карта была видна */
-  width: 100%;
-  max-width: 1000px;
+/* ======== ГЛАВНЫЙ КОНТЕЙНЕР (важно!) ======== */
+#layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  max-width: 1200px;
   margin: 20px auto;
+  padding: 10px;
+}
+
+/* ======== МОБИЛЬНАЯ ВЕРСИЯ ======== */
+@media (max-width: 800px) {
+  #layout {
+    grid-template-columns: 1fr;
+  }
+
+  #map {
+    height: 350px;
+  }
+}
+
+/* ======== КАРТА ======== */
+#map {
+  height: 500px;
+  width: 100%;
   border-radius: 12px;
   box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
 
-.card {
+/* ======== КАРТОЧКА С ИНФО ======== */
+#info-box {
   background: white;
-  max-width: 700px;
-  margin: auto;
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+.fio {
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.timer {
+  font-size: 24px;
+  font-weight: bold;
 }
 
 #admin {
   display: none;
-  margin-top: 30px;
+  max-width: 600px;
+  margin: 20px auto;
   background: white;
   padding: 20px;
   border-radius: 8px;
-  max-width: 700px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-#admin input, #admin textarea {
-  width: 100%;
-  margin: 5px 0;
-  padding: 8px;
 }
 </style>
 </head>
 
 <body>
 
-<div id="view">
-  <h1>Загрузка…</h1>
-</div>
+<div id="layout">
+  <div id="info-box">
+    <h2>Загрузка…</h2>
+  </div>
 
-<div id="map"></div>
+  <div id="map"></div>
+</div>
 
 <div id="admin">
   <h2>Админ-панель</h2>
