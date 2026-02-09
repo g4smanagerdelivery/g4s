@@ -34,9 +34,6 @@ let isAdmin = false;
 let endTime = null;
 let map, marker, routeLine;
 let route = [];
-let fromMarker = null;
-let toMarker = null;
-let clickCount = 0;
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -50,7 +47,7 @@ window.onload = () => {
 
   if (isAdmin) admin.style.display = "block";
 
-  // Карта (по умолчанию Алматы)
+  // Инициализация карты (по умолчанию Алматы)
   map = L.map("map").setView([43.238949, 76.889709], 12);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap contributors"
@@ -60,44 +57,6 @@ window.onload = () => {
     radius: 8,
     color: "red"
   }).addTo(map);
-
-  // === ЛОГИКА КЛИКОВ (ТОЛЬКО ДЛЯ АДМИНА) ===
-  if (isAdmin) {
-    map.on("click", (e) => {
-      const { lat, lng } = e.latlng;
-
-      if (clickCount === 0) {
-        // Первая точка — ОТКУДА
-        if (fromMarker) map.removeLayer(fromMarker);
-        fromMarker = L.circleMarker([lat, lng], {
-          radius: 8,
-          color: "green"
-        }).addTo(map);
-        fromCoord.value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        clickCount = 1;
-      } 
-      else if (clickCount === 1) {
-        // Вторая точка — КУДА
-        if (toMarker) map.removeLayer(toMarker);
-        toMarker = L.circleMarker([lat, lng], {
-          radius: 8,
-          color: "red"
-        }).addTo(map);
-        toCoord.value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        clickCount = 2;
-
-        // Рисуем маршрут
-        route = [
-          [fromMarker.getLatLng().lat, fromMarker.getLatLng().lng],
-          [lat, lng]
-        ];
-
-        if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.polyline(route, { color: "blue" }).addTo(map);
-        map.fitBounds(routeLine.getBounds());
-      }
-    });
-  }
 
   if (userId) {
     const ref = doc(db, "investors", userId);
@@ -162,7 +121,7 @@ function updateTimer() {
 function updateMapPosition() {
   if (!endTime || route.length < 2) return;
 
-  const totalTime = 60 * 60 * 1000; // 1 час на маршрут
+  const totalTime = 60 * 60 * 1000; // 1 час на весь маршрут
   const elapsed = totalTime - Math.max(0, endTime - new Date());
   const progress = Math.min(1, elapsed / totalTime);
 
@@ -171,20 +130,28 @@ function updateMapPosition() {
 }
 
 window.saveUser = async () => {
-  const id = uid.value;
-  const name = uname.value;
+  const id = uid.value.trim();
+  const name = uname.value.trim();
   const t = endInput.value;
-  const info = uinfo.value;
-  const from = fromCoord.value;
-  const to = toCoord.value;
+  const info = uinfo.value.trim();
+  const from = fromCoord.value.trim();
+  const to = toCoord.value.trim();
 
   if (!id || !name || !t || !from || !to) {
-    alert("Сначала поставь две точки на карте!");
+    alert("Заполни ID, ФИО, время, Откуда и Куда");
     return;
   }
 
+  // Разбираем координаты
   const fromArr = from.split(",").map(n => parseFloat(n.trim()));
   const toArr = to.split(",").map(n => parseFloat(n.trim()));
+
+  if (fromArr.length !== 2 || toArr.length !== 2 ||
+      isNaN(fromArr[0]) || isNaN(fromArr[1]) ||
+      isNaN(toArr[0]) || isNaN(toArr[1])) {
+    alert("Неверный формат координат! Используй: 43.238949, 76.889709");
+    return;
+  }
 
   const route = [fromArr, toArr];
 
@@ -198,9 +165,9 @@ window.saveUser = async () => {
   const link =
     location.origin + location.pathname + "?user=" + encodeURIComponent(id);
 
-  navigator.clipboard.writeText(link).then(() => {
-    alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
-  });
+  await navigator.clipboard.writeText(link);
+
+  alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
 };
 </script>
 
@@ -219,6 +186,24 @@ body {
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+.fio {
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.timer {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.info-box {
+  background: #f3f3f3;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 10px 0;
+  text-align: left;
 }
 
 #admin {
@@ -249,12 +234,12 @@ body {
 <div id="admin">
   <h2>Админ-панель</h2>
 
-  <input id="uid" placeholder="ID (tuman)">
+  <input id="uid" placeholder="ID (например: tuman)">
   <input id="uname" placeholder="ФИО">
   <input type="datetime-local" id="endInput">
 
-  <input id="fromCoord" placeholder="Откуда (ставится кликом по карте)" readonly>
-  <input id="toCoord" placeholder="Куда (ставится кликом по карте)" readonly>
+  <input id="fromCoord" placeholder="Откуда (например: 43.238949, 76.889709)">
+  <input id="toCoord" placeholder="Куда (например: 43.250000, 76.920000)">
 
   <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
   <button onclick="saveUser()">Сохранить</button>
@@ -264,3 +249,4 @@ body {
 
 </body>
 </html>
+
