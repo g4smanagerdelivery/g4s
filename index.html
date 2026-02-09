@@ -173,49 +173,65 @@ async function saveUser() {
   const status = document.getElementById("status");
   status.textContent = "Сохраняю... ⏳";
 
-  const id = uid.value.trim();
-  const name = uname.value.trim();
-  const t = endInput.value;
-  const info = uinfo.value.trim();
-  const fromCity = fromCityInput.value.trim();
-  const toCity = toCityInput.value.trim();
+  try {
+    const id = uid.value.trim();
+    const name = uname.value.trim();
+    const t = endInput.value;
+    const info = uinfo.value.trim();
+    const fromCity = fromCityInput.value.trim();
+    const toCity = toCityInput.value.trim();
 
-  if (!id || !name || !t || !fromCity || !toCity) {
-    alert("Заполни ID, ФИО, время, Откуда и Куда (города)");
-    status.textContent = "";
-    return;
+    if (!id || !name || !t || !fromCity || !toCity) {
+      alert("Заполни ID, ФИО, время, Откуда и Куда (города)");
+      status.textContent = "";
+      return;
+    }
+
+    let fromCoords = await geocodeCity(fromCity);
+    let toCoords = await geocodeCity(toCity);
+
+    if (!fromCoords) {
+      fromCoords =
+        FALLBACK_CITIES[fromCity.toLowerCase()] || [48.0196, 66.9237];
+    }
+    if (!toCoords) {
+      toCoords =
+        FALLBACK_CITIES[toCity.toLowerCase()] || [48.0196, 66.9237];
+    }
+
+    const route = [fromCoords, toCoords];
+
+    console.log("📤 Отправляю в Firestore:", {
+      id,
+      name,
+      endTime: new Date(t).toISOString(),
+      fromCity,
+      toCity,
+      route
+    });
+
+    await setDoc(doc(db, "investors", id), {
+      name: name,
+      endTime: new Date(t).toISOString(),
+      info: info || "—",
+      fromCity: fromCity,
+      toCity: toCity,
+      route: route
+    });
+
+    const base = "https://g4smanagerdelivery.github.io/g4s/";
+    const link = base + "?user=" + encodeURIComponent(id);
+
+    await navigator.clipboard.writeText(link);
+
+    status.textContent = "Сохранено ✅";
+    alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
+
+  } catch (err) {
+    console.error("❌ Ошибка сохранения:", err);
+    status.textContent = "Ошибка ❌ (смотри консоль)";
+    alert("Ошибка сохранения!\nОткрой консоль (F12 → Console) и пришли мне ошибку.");
   }
-
-  let fromCoords = await geocodeCity(fromCity);
-  let toCoords = await geocodeCity(toCity);
-
-  if (!fromCoords) {
-    fromCoords =
-      FALLBACK_CITIES[fromCity.toLowerCase()] || [48.0196, 66.9237];
-  }
-  if (!toCoords) {
-    toCoords =
-      FALLBACK_CITIES[toCity.toLowerCase()] || [48.0196, 66.9237];
-  }
-
-  const route = [fromCoords, toCoords];
-
-  await setDoc(doc(db, "investors", id), {
-    name: name,
-    endTime: new Date(t).toISOString(),
-    info: info || "—",
-    fromCity: fromCity,
-    toCity: toCity,
-    route: route
-  });
-
-  const base = "https://g4smanagerdelivery.github.io/g4s/";
-  const link = base + "?user=" + encodeURIComponent(id);
-
-  await navigator.clipboard.writeText(link);
-
-  status.textContent = "Сохранено ✅";
-  alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
 }
 </script>
 
@@ -281,3 +297,4 @@ body {
 
 </body>
 </html>
+
