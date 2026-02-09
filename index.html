@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <title>G4S Инкассационная доставка</title>
 
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
 import {
@@ -29,6 +32,8 @@ const isAdminParam = params.get("admin") === "true";
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
+let map, marker, routeLine;
+let route = [];
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -42,6 +47,17 @@ window.onload = () => {
 
   if (isAdmin) admin.style.display = "block";
 
+  // Инициализация карты (по умолчанию — Алматы)
+  map = L.map("map").setView([43.238949, 76.889709], 12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors"
+  }).addTo(map);
+
+  marker = L.circleMarker([43.238949, 76.889709], {
+    radius: 8,
+    color: "red"
+  }).addTo(map);
+
   if (userId) {
     const ref = doc(db, "investors", userId);
 
@@ -54,11 +70,22 @@ window.onload = () => {
       const d = snap.data();
       endTime = new Date(d.endTime);
 
+      // Загружаем маршрут из базы
+      route = d.route || [];
+
+      // Если есть маршрут — рисуем его
+      if (route.length >= 2) {
+        if (routeLine) map.removeLayer(routeLine);
+        routeLine = L.polyline(route, { color: "blue" }).addTo(map);
+        marker.setLatLng(route[0]);
+        map.fitBounds(routeLine.getBounds());
+      }
+
       view.innerHTML = `
         <div class="card">
           <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-          <h3>Получатель:</h3>
+          <h3>ФИО:</h3>
           <p class="fio">${d.name}</p>
 
           <h3>Примерное время прибытия:</h3>
@@ -66,12 +93,17 @@ window.onload = () => {
 
           <h3>Информация о доставке:</h3>
           <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
+
+          <div id="map" style="height: 400px; margin-top: 20px;"></div>
         </div>
       `;
     });
   }
 
-  setInterval(updateTimer, 1000);
+  setInterval(() => {
+    updateTimer();
+    updateMapPosition();
+  }, 1000);
 };
 
 function updateTimer() {
@@ -88,21 +120,40 @@ function updateTimer() {
   }
 }
 
+function updateMapPosition() {
+  if (!endTime || route.length < 2) return;
+
+  const totalTime = 60 * 60 * 1000; // 1 час на весь маршрут
+  const elapsed = totalTime - Math.max(0, endTime - new Date());
+  const progress = Math.min(1, elapsed / totalTime);
+
+  const index = Math.floor(progress * (route.length - 1));
+  marker.setLatLng(route[index]);
+}
+
 window.saveUser = async () => {
   const id = uid.value;
   const name = uname.value;
   const t = endInput.value;
   const info = uinfo.value;
+  const from = fromCoord.value;
+  const to = toCoord.value;
 
-  if (!id || !name || !t) {
-    alert("Заполни ID, ФИО и время");
+  if (!id || !name || !t || !from || !to) {
+    alert("Заполни ID, ФИО, время и координаты");
     return;
   }
+
+  const fromArr = from.split(",").map(n => parseFloat(n.trim()));
+  const toArr = to.split(",").map(n => parseFloat(n.trim()));
+
+  const route = [fromArr, toArr];
 
   await setDoc(doc(db, "investors", id), {
     name: name,
     endTime: new Date(t).toISOString(),
-    info: info || "—"
+    info: info || "—",
+    route: route
   });
 
   const link =
@@ -115,25 +166,16 @@ window.saveUser = async () => {
 </script>
 
 <style>
-/* ======== ПРАВИЛЬНОЕ ЗАМОЩЕНИЕ G4S ПО ВСЕМУ ЭКРАНУ ======== */
 body {
   font-family: Arial;
   background-color: #f2f2f2;
-
-  /* ПОВТОРЯЮЩИЙСЯ SVG-ПАТТЕРН С G4S */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Ctext x='20' y='80' font-size='32' font-weight='bold' fill='rgba(0,0,0,0.05)' transform='rotate(-20 100 60)'%3EG4S%3C/text%3E%3C/svg%3E");
-
-  background-repeat: repeat;
-  background-size: 200px 120px;
-
   padding: 30px;
   text-align: center;
 }
 
-/* ======== КАРТОЧКА ======== */
 .card {
   background: white;
-  max-width: 700px;
+  max-width: 800px;
   margin: auto;
   padding: 20px;
   border-radius: 12px;
@@ -156,17 +198,15 @@ body {
   border-radius: 8px;
   margin: 10px 0;
   text-align: left;
-  font-size: 32px !important;   /* ← ВАЖНО: добавили !important */
 }
 
-/* ======== АДМИНКА ======== */
 #admin {
   display: none;
   margin-top: 30px;
   background: white;
   padding: 20px;
   border-radius: 8px;
-  max-width: 700px;
+  max-width: 800px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -191,10 +231,11 @@ body {
   <input id="uid" placeholder="ID (tuman)">
   <input id="uname" placeholder="ФИО">
   <input type="datetime-local" id="endInput">
+  <input id="fromCoord" placeholder="Откуда (например: 43.238949, 76.889709)">
+  <input id="toCoord" placeholder="Куда (например: 43.250000, 76.920000)">
   <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
   <button onclick="saveUser()">Сохранить</button>
 </div>
 
 </body>
 </html>
-
