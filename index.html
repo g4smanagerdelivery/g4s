@@ -35,13 +35,7 @@ let endTime = null;
 let map, marker, routeLine;
 let route = [];
 
-if (isAdminParam) {
-  const p = prompt("Пароль администратора");
-  if (p === ADMIN_PASSWORD) isAdmin = true;
-  else throw new Error("Access denied");
-}
-
-// === ФУНКЦИЯ: превратить город → координаты ===
+// ======== ГЕОКОДИНГ ГОРОДА (БЕЗ КООРДИНАТ ВВОДА) ========
 async function geocodeCity(city) {
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}`;
 
@@ -53,6 +47,13 @@ async function geocodeCity(city) {
   if (!data || data.length === 0) return null;
 
   return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+}
+
+// ======== ПРОВЕРКА АДМИН-ПАРОЛЯ ========
+if (isAdminParam) {
+  const p = prompt("Пароль администратора");
+  if (p === ADMIN_PASSWORD) isAdmin = true;
+  else throw new Error("Access denied");
 }
 
 window.onload = () => {
@@ -68,8 +69,7 @@ window.onload = () => {
   }).addTo(map);
 
   marker = L.circleMarker([48.0196, 66.9237], {
-    radius: 8,
-    color: "red"
+    radius: 8
   }).addTo(map);
 
   if (userId) {
@@ -87,7 +87,7 @@ window.onload = () => {
 
       if (route.length >= 2) {
         if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.polyline(route, { color: "blue" }).addTo(map);
+        routeLine = L.polyline(route).addTo(map);
         marker.setLatLng(route[0]);
         map.fitBounds(routeLine.getBounds());
       }
@@ -133,7 +133,6 @@ function updateTimer() {
   const timeEl = document.getElementById("time");
   if (timeEl) {
     timeEl.textContent = `${h}ч ${m}м ${s}с`;
-    timeEl.style.color = h < 5 ? "red" : "black";
   }
 }
 
@@ -148,6 +147,7 @@ function updateMapPosition() {
   marker.setLatLng(route[index]);
 }
 
+// ======== СОХРАНЕНИЕ ДАННЫХ (ВАЖНО — ИСПРАВЛЕНО) ========
 window.saveUser = async () => {
   const id = uid.value.trim();
   const name = uname.value.trim();
@@ -160,8 +160,6 @@ window.saveUser = async () => {
     alert("Заполни ID, ФИО, время, Откуда и Куда (города)");
     return;
   }
-
-  alert("Ищу координаты городов…");
 
   const fromCoords = await geocodeCity(fromCity);
   const toCoords = await geocodeCity(toCity);
@@ -186,8 +184,9 @@ window.saveUser = async () => {
     route: route
   });
 
-  const link =
-    location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+  // ✅ ПРАВИЛЬНАЯ ССЫЛКА (БЕЗ 404)
+  const base = "https://g4smanagerdelivery.github.io/g4s/";
+  const link = base + "?user=" + encodeURIComponent(id);
 
   await navigator.clipboard.writeText(link);
 
@@ -273,5 +272,3 @@ body {
 
 </body>
 </html>
-
-
