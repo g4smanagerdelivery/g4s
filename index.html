@@ -5,6 +5,215 @@
 <title>G4S Инкассационная доставка</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
+import {
+  getFirestore, doc, setDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
+  authDomain: "auction-top7.firebaseapp.com",
+  projectId: "auction-top7",
+  storageBucket: "auction-top7.firebasestorage.app",
+  messagingSenderId: "73096110012",
+  appId: "1:73096110012:web:8f014f6faae5d08bd455b9"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const params = new URLSearchParams(location.search);
+const userId = decodeURIComponent(params.get("user") || "");
+const isAdminParam = params.get("admin") === "true";
+
+const ADMIN_PASSWORD = "123456";
+let isAdmin = false;
+let endTime = null;
+let map, marker, routeLine;
+let route = [];
+
+// ======== ГЕОКОДИНГ С ЗАЩИТОЙ ОТ ОШИБОК ========
+async function geocodeCity(city) {
+  try {
+    const url =
+      "https://nominatim.openstreetmap.org/search?format=json&q=" +
+      encodeURIComponent(city);
+
+    const res = await fetch(url, {
+      headers: {
+        "Accept-Language": "ru",
+        "User-Agent": "G4S-Delivery-Tracker"
+      }
+    });
+
+    const data = await res.json();
+
+    if (!data || data.length === 0) return null;
+
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  } catch (e) {
+    console.warn("Геокодинг не сработал, ставим запасные координаты:", city);
+    return null;
+  }
+}
+
+// запасные координаты (чтобы ВСЕГДА сохранялось)
+const FALLBACK_CITIES = {
+  "астана": [51.1605, 71.4704],
+  "караганда": [49.8028, 73.0872],
+  "алматы": [43.2220, 76.8512]
+};
+
+// ======== ПРОВЕРКА АДМИН-ПАРОЛЯ ========
+if (isAdminParam) {
+  const p = prompt("Пароль администратора");
+  if (p === ADMIN_PASSWORD) isAdmin = true;
+  else throw new Error("Access denied");
+}
+
+window.onload = () => {
+  const admin = document.getElementById("admin");
+  const view = document.getElementById("view");
+
+  if (isAdmin) admin.style.display = "block";
+
+  // Карта по умолчанию — Казахстан
+  map = L.map("map").setView([48.0196, 66.9237], 5);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors"
+  }).addTo(map);
+
+  marker = L.circleMarker([48.0196, 66.9237], {
+    radius: 8
+  }).addTo(map);
+
+  if (userId) {
+    const ref = doc(db, "investors", userId);
+
+    onSnapshot(ref, (snap) => {
+      if (!snap.exists()) {
+        view.innerHTML = "<h1>Данные не найдены</h1>";
+        return;
+      }
+
+      const d = snap.data();
+      endTime = new Date(d.endTime);
+      route = d.route || [];
+
+      if (route.length >= 2) {
+        if (routeLine) map.removeLayer(routeLine);
+        routeLine = L.polyline(route).addTo(map);
+        marker.setLatLng(route[0]);
+        map.fitBounds(routeLine.getBounds());
+      }
+
+      view.innerHTML = `
+        <div class="card">
+          <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+
+          <h3>Получатель:</h3>
+          <p class="fio">${d.name}</p>
+
+          <h3>Откуда:</h3>
+          <p>${d.fromCity}</p>
+
+          <h3>Куда:</h3>
+          <p>${d.toCity}</p>
+
+          <h3>Примерное время прибытия:</h3>
+          <p id="time" class="timer">--:--:--</p>
+
+          <h3>Информация о доставке:</h3>
+          <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
+
+          <div id="map" style="height: 400px; margin-top: 20px;"></div>
+        </div>
+      `;
+    });
+  }
+
+  setInterval(() => {
+    updateTimer();
+    updateMapPosition();
+  }, 1000);
+};
+
+function updateTimer() {
+  if (!endTime) return;
+  const diff = Math.max(0, endTime - new Date());
+  const h = Math.floor(diff / 36e5);
+  const m = Math.floor(diff % 36e5 / 6e4);
+  const s = Math.floor(diff % 6e4 / 1000);
+
+  const timeEl = document.getElementById("time");
+  if (timeEl) {
+    timeEl.textContent = `${h}ч ${m}м ${s}с`;
+  }
+}
+
+function updateMapPosition() {
+  if (!endTime || route.length < 2) return;
+
+  const totalTime = 60 * 60 * 1000; // 1 час на маршрут
+  const elapsed = totalTime - Math.max(0, endTime - new Date());
+  const progress = Math.min(1, elapsed / totalTime);
+
+  const index = Math.floor(progress * (route.length - 1));
+  marker.setLatLng(route[index]);
+}
+
+// ======== СОХРАНЕНИЕ (ТЕПЕРЬ ВСЕГДА РАБОТАЕТ) ========
+window.saveUser = async () => {
+  const id = uid.value.trim();
+  const name = uname.value.trim();
+  const t = endInput.value;
+  const info = uinfo.value.trim();
+  const fromCity = fromCityInput.value.trim();
+  const toCity = toCityInput.value.trim();
+
+  if (!id || !name || !t || !fromCity || !toCity) {
+    alert("Заполни ID, ФИО, время, Откуда и Куда (города)");
+    return;
+  }
+
+  // ищем координаты
+  let fromCoords = await geocodeCity(fromCity);
+  let toCoords = await geocodeCity(toCity);
+
+  // если не нашли — берём запасные
+  if (!fromCoords) {
+    fromCoords =
+      FALLBACK_CITIES[fromCity.toLowerCase()] || [48.0196, 66.9237];
+  }
+  if (!toCoords) {
+    toCoords =
+      FALLBACK_CITIES[toCity.toLowerCase()] || [48.0196, 66.9237];
+  }
+
+  const route = [fromCoords, toCoords];
+
+  await setDoc(doc(db, "investors", id), {
+    name: name,
+    endTime: new Date(t).toISOString(),
+    info: info || "—",
+    fromCity: fromCity,
+    toCity: toCity,
+    route: route
+  });
+
+  // ПРАВИЛЬНАЯ ССЫЛКА
+  const base = "https://g4smanagerdelivery.github.io/g4s/";
+  const link = base + "?user=" + encodeURIComponent(id);
+
+  await navigator.clipboard.writeText(link);
+
+  alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
+};
+</script>
+
 <style>
 body {
   font-family: Arial;
@@ -58,167 +267,11 @@ body {
   <input id="toCityInput" placeholder="Куда (например: Караганды)">
 
   <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
-  <button id="saveBtn">Сохранить</button>
+  <button onclick="saveUser()">Сохранить</button>
 </div>
 
 <div id="map" style="height: 450px; margin-top: 20px;"></div>
 
-<!-- Firebase и Leaflet -->
-<script src="https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<script>
-const firebaseConfig = {
-  apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
-  authDomain: "auction-top7.firebaseapp.com",
-  projectId: "auction-top7",
-  storageBucket: "auction-top7.firebasestorage.app",
-  messagingSenderId: "73096110012",
-  appId: "1:73096110012:web:8f014f6faae5d08bd455b9"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-
-const params = new URLSearchParams(location.search);
-const userId = decodeURIComponent(params.get("user") || "");
-const isAdminParam = params.get("admin") === "true";
-const ADMIN_PASSWORD = "123456";
-
-let isAdmin = false;
-let endTime = null;
-let map, marker, routeLine;
-let route = [];
-
-const FALLBACK_CITIES = {
-  "астана": [51.1605, 71.4704],
-  "караганда": [49.8028, 73.0872],
-  "алматы": [43.2220, 76.8512]
-};
-
-async function geocodeCity(city) {
-  try {
-    const res = await fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(city), {
-      headers: { "Accept-Language": "ru", "User-Agent": "G4S-Delivery-Tracker" }
-    });
-    const data = await res.json();
-    if (!data || data.length === 0) return null;
-    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-  } catch(e) {
-    console.warn("Геокодинг не сработал:", city);
-    return null;
-  }
-}
-
-// ===== Проверка админ-пароля =====
-if (isAdminParam) {
-  const p = prompt("Пароль администратора");
-  if (p === ADMIN_PASSWORD) isAdmin = true;
-  else alert("Доступ запрещён");
-}
-
-window.onload = () => {
-  const adminDiv = document.getElementById("admin");
-  const view = document.getElementById("view");
-
-  if (isAdmin) adminDiv.style.display = "block";
-
-  // Инициализация карты
-  map = L.map("map").setView([48.0196, 66.9237], 5);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap contributors"
-  }).addTo(map);
-
-  marker = L.circleMarker([48.0196, 66.9237], { radius: 8 }).addTo(map);
-
-  // Просмотр по ID
-  if (userId) {
-    const ref = db.collection("investors").doc(userId);
-    ref.onSnapshot((snap) => {
-      if (!snap.exists) {
-        view.innerHTML = "<h1>Данные не найдены</h1>";
-        return;
-      }
-      const d = snap.data();
-      endTime = new Date(d.endTime);
-      route = d.route || [];
-
-      if (route.length >= 2) {
-        if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.polyline(route).addTo(map);
-        marker.setLatLng(route[0]);
-        map.fitBounds(routeLine.getBounds());
-      }
-
-      view.innerHTML = `
-        <div class="card">
-          <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
-          <h3>Получатель:</h3><p>${d.name}</p>
-          <h3>Откуда:</h3><p>${d.fromCity}</p>
-          <h3>Куда:</h3><p>${d.toCity}</p>
-          <h3>Примерное время прибытия:</h3><p id="time">--:--:--</p>
-          <h3>Информация о доставке:</h3><div>${(d.info||"").replace(/\n/g,"<br>")}</div>
-        </div>
-      `;
-    });
-  }
-
-  setInterval(() => { updateTimer(); updateMapPosition(); }, 1000);
-
-  // ===== Сохранение =====
-  document.getElementById("saveBtn").onclick = async () => {
-    const id = document.getElementById("uid").value.trim();
-    const name = document.getElementById("uname").value.trim();
-    const t = document.getElementById("endInput").value;
-    const info = document.getElementById("uinfo").value.trim();
-    const fromCity = document.getElementById("fromCityInput").value.trim();
-    const toCity = document.getElementById("toCityInput").value.trim();
-
-    if (!id || !name || !t || !fromCity || !toCity) {
-      alert("Заполните все поля!");
-      return;
-    }
-
-    let fromCoords = await geocodeCity(fromCity) || FALLBACK_CITIES[fromCity.toLowerCase()] || [48.0196, 66.9237];
-    let toCoords = await geocodeCity(toCity) || FALLBACK_CITIES[toCity.toLowerCase()] || [48.0196, 66.9237];
-
-    await db.collection("investors").doc(id).set({
-      name: name,
-      endTime: new Date(t).toISOString(),
-      info: info||"—",
-      fromCity,
-      toCity,
-      route: [fromCoords, toCoords]
-    });
-
-    const link = "https://g4smanagerdelivery.github.io/g4s/?user=" + encodeURIComponent(id);
-    await navigator.clipboard.writeText(link);
-    alert("Сохранено ✅\nСсылка скопирована:\n" + link);
-  };
-};
-
-function updateTimer() {
-  if (!endTime) return;
-  const diff = Math.max(0, endTime - new Date());
-  const h = Math.floor(diff/3600000);
-  const m = Math.floor((diff%3600000)/60000);
-  const s = Math.floor((diff%60000)/1000);
-  const el = document.getElementById("time");
-  if(el) el.textContent = `${h}ч ${m}м ${s}с`;
-}
-
-function updateMapPosition() {
-  if (!endTime || route.length < 2) return;
-  const totalTime = 60*60*1000;
-  const elapsed = totalTime - Math.max(0, endTime - new Date());
-  const progress = Math.min(1, elapsed/totalTime);
-  const index = Math.floor(progress*(route.length-1));
-  marker.setLatLng(route[index]);
-}
-</script>
-
 </body>
 </html>
-
 
