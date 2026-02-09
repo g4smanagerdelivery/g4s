@@ -8,6 +8,10 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<!-- Leaflet Routing Machine (прокладка маршрута по дорогам) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
 import {
@@ -27,7 +31,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// ===== ГОРОДА → КООРДИНАТЫ (БЕЗ КАРТЫ ВВОДА) =====
+// ===== ГОРОДА → КООРДИНАТЫ =====
 const CITY_COORDS = {
   "астана": [51.1605, 71.4704],
   "караганда": [49.8028, 73.0877],
@@ -37,7 +41,7 @@ const CITY_COORDS = {
   "актау": [43.6500, 51.2000]
 };
 
-// ===== ПАРАМЕТРЫ И АДМИН =====
+// ===== ПАРАМЕТРЫ =====
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 const isAdminParam = params.get("admin") === "true";
@@ -46,10 +50,10 @@ const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
 let startTime = null;
-let startCoords = null;
-let endCoords = null;
+let routeCoords = []; // массив точек маршрута
 let carMarker = null;
 let map = null;
+let routeLine = null;
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -63,9 +67,12 @@ window.onload = () => {
 
   if (isAdmin) admin.style.display = "block";
 
-  // ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ =====
+  // ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ (ВАЖНО — она теперь ВСЕГДА видна) =====
   map = L.map("map").setView([48.0196, 66.9237], 5);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18
+  }).addTo(map);
 
   const carIcon = L.icon({
     iconUrl: "https://cdn-icons-png.flaticon.com/512/2972/2972185.png",
@@ -77,7 +84,7 @@ window.onload = () => {
   if (userId) {
     const ref = doc(db, "investors", userId);
 
-    onSnapshot(ref, (snap) => {
+    onSnapshot(ref, async (snap) => {
       if (!snap.exists()) {
         view.innerHTML = "<h1>Данные не найдены</h1>";
         return;
@@ -85,18 +92,41 @@ window.onload = () => {
 
       const d = snap.data();
       endTime = new Date(d.endTime);
-      startTime = new Date(endTime.getTime() - 3 * 60 * 60 * 1000); // условно 3 часа пути
+      startTime = new Date(endTime.getTime() - 3 * 60 * 60 * 1000); // 3 часа пути (условно)
 
       const from = (d.fromCity || "").toLowerCase();
       const to = (d.toCity || "").toLowerCase();
 
-      startCoords = CITY_COORDS[from] || [48.0196, 66.9237];
-      endCoords = CITY_COORDS[to] || [48.0196, 66.9237];
+      const startCoords = CITY_COORDS[from] || [48.0196, 66.9237];
+      const endCoords = CITY_COORDS[to] || [48.0196, 66.9237];
 
-      L.marker(startCoords).addTo(map).bindPopup("Откуда: " + d.fromCity);
-      L.marker(endCoords).addTo(map).bindPopup("Куда: " + d.toCity);
+      // Очищаем старый маршрут
+      if (routeLine) map.removeLayer(routeLine);
 
-      map.fitBounds([startCoords, endCoords]);
+      // ===== СТРОИМ МАРШРУТ ПО ДОРОГАМ =====
+      const router = L.Routing.osrmv1();
+
+      router.route(
+        [
+          L.latLng(startCoords[0], startCoords[1]),
+          L.latLng(endCoords[0], endCoords[1])
+        ],
+        (err, res) => {
+          if (err) {
+            console.error("Ошибка маршрута:", err);
+            return;
+          }
+
+          routeCoords = res.routes[0].coordinates.map(c => [c.lat, c.lng]);
+
+          routeLine = L.polyline(routeCoords, {
+            color: "blue",
+            weight: 4
+          }).addTo(map);
+
+          map.fitBounds(routeLine.getBounds());
+        }
+      );
 
       view.innerHTML = `
         <div class="card">
@@ -122,9 +152,9 @@ window.onload = () => {
   setInterval(updateTimerAndCar, 1000);
 };
 
-// ===== ТАЙМЕР + ДВИЖЕНИЕ МАШИНЫ =====
+// ===== ТАЙМЕР + ДВИЖЕНИЕ ПО МАРШРУТУ =====
 function updateTimerAndCar() {
-  if (!endTime || !startCoords || !endCoords) return;
+  if (!endTime || routeCoords.length === 0) return;
 
   const now = new Date();
   const total = endTime - startTime;
@@ -143,17 +173,17 @@ function updateTimerAndCar() {
     timeEl.style.color = h < 1 ? "red" : "black";
   }
 
-  // Двигаем машинку по прямой
-  const lat = startCoords[0] + (endCoords[0] - startCoords[0]) * progress;
-  const lng = startCoords[1] + (endCoords[1] - startCoords[1]) * progress;
+  // Двигаем машинку по реальному маршруту
+  const index = Math.floor(progress * (routeCoords.length - 1));
+  const pos = routeCoords[index];
 
-  carMarker.setLatLng([lat, lng]);
+  if (pos) {
+    carMarker.setLatLng(pos);
+  }
 }
 
 // ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
 window.saveUser = async () => {
-  const status = document.getElementById("status");
-
   try {
     const id = uid.value.trim();
     const name = uname.value.trim();
@@ -181,7 +211,6 @@ window.saveUser = async () => {
 
     await navigator.clipboard.writeText(link);
 
-    status.textContent = "Сохранено ✅";
     alert("Сохранено!\nСсылка скопирована:\n\n" + link);
 
   } catch (err) {
@@ -200,9 +229,9 @@ body {
 }
 
 #map {
-  height: 400px;
+  height: 450px;      /* ВАЖНО — чтобы карта была видна */
   width: 100%;
-  max-width: 900px;
+  max-width: 1000px;
   margin: 20px auto;
   border-radius: 12px;
   box-shadow: 0 0 10px rgba(0,0,0,0.1);
@@ -257,7 +286,6 @@ body {
   <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
 
   <button onclick="saveUser()">Сохранить</button>
-  <p id="status" style="color:green"></p>
 </div>
 
 </body>
