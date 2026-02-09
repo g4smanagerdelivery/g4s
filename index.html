@@ -4,15 +4,13 @@
 <meta charset="UTF-8">
 <title>G4S Инкассационная доставка</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
 import {
   getFirestore, doc, setDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
+// ===== ТВОЯ FIREBASE =====
 const firebaseConfig = {
   apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
   authDomain: "auction-top7.firebaseapp.com",
@@ -25,6 +23,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// ===== ПАРАМЕТРЫ И АДМИН =====
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 const isAdminParam = params.get("admin") === "true";
@@ -32,66 +31,19 @@ const isAdminParam = params.get("admin") === "true";
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
-let map, marker, routeLine;
-let route = [];
 
-// ======== ГЕОКОДИНГ (с защитой от ошибок) ========
-async function geocodeCity(city) {
-  try {
-    const url =
-      "https://nominatim.openstreetmap.org/search?format=json&q=" +
-      encodeURIComponent(city);
-
-    const res = await fetch(url, {
-      headers: {
-        "Accept-Language": "ru",
-        "User-Agent": "G4S-Delivery-Tracker"
-      }
-    });
-
-    const data = await res.json();
-    if (!data || data.length === 0) return null;
-
-    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-  } catch (e) {
-    console.warn("Геокодинг не сработал:", e);
-    return null;
-  }
-}
-
-// запасные координаты (если поиск не сработает)
-const FALLBACK_CITIES = {
-  "астана": [51.1605, 71.4704],
-  "караганды": [49.8028, 73.0872],
-  "алматы": [43.2220, 76.8512]
-};
-
-// ======== ПРОВЕРКА АДМИН-ПАРОЛЯ ========
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
   if (p === ADMIN_PASSWORD) isAdmin = true;
   else throw new Error("Access denied");
 }
 
+// ===== ЗАГРУЗКА СТРАНИЦЫ =====
 window.onload = () => {
   const admin = document.getElementById("admin");
   const view = document.getElementById("view");
-  const saveBtn = document.getElementById("saveBtn");
 
   if (isAdmin) admin.style.display = "block";
-
-  // ВАЖНО: теперь кнопка работает через addEventListener
-  saveBtn.addEventListener("click", saveUser);
-
-  // Карта по умолчанию — Казахстан
-  map = L.map("map").setView([48.0196, 66.9237], 5);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap contributors"
-  }).addTo(map);
-
-  marker = L.circleMarker([48.0196, 66.9237], {
-    radius: 8
-  }).addTo(map);
 
   if (userId) {
     const ref = doc(db, "investors", userId);
@@ -104,46 +56,32 @@ window.onload = () => {
 
       const d = snap.data();
       endTime = new Date(d.endTime);
-      route = d.route || [];
-
-      if (route.length >= 2) {
-        if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.polyline(route).addTo(map);
-        marker.setLatLng(route[0]);
-        map.fitBounds(routeLine.getBounds());
-      }
 
       view.innerHTML = `
         <div class="card">
           <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-          <h3>ФИО:</h3>
+          <h3>Получатель:</h3>
           <p class="fio">${d.name}</p>
-
-          <h3>Откуда:</h3>
-          <p>${d.fromCity}</p>
-
-          <h3>Куда:</h3>
-          <p>${d.toCity}</p>
 
           <h3>Примерное время прибытия:</h3>
           <p id="time" class="timer">--:--:--</p>
 
+          <h3>Маршрут:</h3>
+          <p><b>Откуда:</b> ${d.fromCity}</p>
+          <p><b>Куда:</b> ${d.toCity}</p>
+
           <h3>Информация о доставке:</h3>
           <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
-
-          <div id="map" style="height: 400px; margin-top: 20px;"></div>
         </div>
       `;
     });
   }
 
-  setInterval(() => {
-    updateTimer();
-    updateMapPosition();
-  }, 1000);
+  setInterval(updateTimer, 1000);
 };
 
+// ===== ТАЙМЕР =====
 function updateTimer() {
   if (!endTime) return;
   const diff = Math.max(0, endTime - new Date());
@@ -154,22 +92,12 @@ function updateTimer() {
   const timeEl = document.getElementById("time");
   if (timeEl) {
     timeEl.textContent = `${h}ч ${m}м ${s}с`;
+    timeEl.style.color = h < 5 ? "red" : "black";
   }
 }
 
-function updateMapPosition() {
-  if (!endTime || route.length < 2) return;
-
-  const totalTime = 60 * 60 * 1000;
-  const elapsed = totalTime - Math.max(0, endTime - new Date());
-  const progress = Math.min(1, elapsed / totalTime);
-
-  const index = Math.floor(progress * (route.length - 1));
-  marker.setLatLng(route[index]);
-}
-
-// ======== СОХРАНЕНИЕ (ТЕПЕРЬ 100% РАБОТАЕТ НА GITHUB PAGES) ========
-async function saveUser() {
+// ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
+window.saveUser = async () => {
   const status = document.getElementById("status");
   status.textContent = "Сохраняю... ⏳";
 
@@ -182,45 +110,22 @@ async function saveUser() {
     const toCity = toCityInput.value.trim();
 
     if (!id || !name || !t || !fromCity || !toCity) {
-      alert("Заполни ID, ФИО, время, Откуда и Куда (города)");
+      alert("Заполни все поля: ID, ФИО, время, Откуда и Куда");
       status.textContent = "";
       return;
     }
-
-    let fromCoords = await geocodeCity(fromCity);
-    let toCoords = await geocodeCity(toCity);
-
-    if (!fromCoords) {
-      fromCoords =
-        FALLBACK_CITIES[fromCity.toLowerCase()] || [48.0196, 66.9237];
-    }
-    if (!toCoords) {
-      toCoords =
-        FALLBACK_CITIES[toCity.toLowerCase()] || [48.0196, 66.9237];
-    }
-
-    const route = [fromCoords, toCoords];
-
-    console.log("📤 Отправляю в Firestore:", {
-      id,
-      name,
-      endTime: new Date(t).toISOString(),
-      fromCity,
-      toCity,
-      route
-    });
 
     await setDoc(doc(db, "investors", id), {
       name: name,
       endTime: new Date(t).toISOString(),
       info: info || "—",
       fromCity: fromCity,
-      toCity: toCity,
-      route: route
+      toCity: toCity
     });
 
-    const base = "https://g4smanagerdelivery.github.io/g4s/";
-    const link = base + "?user=" + encodeURIComponent(id);
+    const link =
+      "https://g4smanagerdelivery.github.io/g4s/?user=" +
+      encodeURIComponent(id);
 
     await navigator.clipboard.writeText(link);
 
@@ -228,11 +133,11 @@ async function saveUser() {
     alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
 
   } catch (err) {
-    console.error("❌ Ошибка сохранения:", err);
+    console.error("Ошибка сохранения:", err);
     status.textContent = "Ошибка ❌ (смотри консоль)";
-    alert("Ошибка сохранения!\nОткрой консоль (F12 → Console) и пришли мне ошибку.");
+    alert("Ошибка! Открой F12 → Console и пришли мне ошибку.");
   }
-}
+};
 </script>
 
 <style>
@@ -245,11 +150,30 @@ body {
 
 .card {
   background: white;
-  max-width: 800px;
+  max-width: 700px;
   margin: auto;
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+.fio {
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.timer {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.info-box {
+  background: #f3f3f3;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 10px 0;
+  text-align: left;
+  font-size: 18px;
 }
 
 #admin {
@@ -258,7 +182,7 @@ body {
   background: white;
   padding: 20px;
   border-radius: 8px;
-  max-width: 800px;
+  max-width: 700px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -284,17 +208,14 @@ body {
   <input id="uname" placeholder="ФИО">
   <input type="datetime-local" id="endInput">
 
-  <input id="fromCityInput" placeholder="Откуда (например: Астана)">
-  <input id="toCityInput" placeholder="Куда (например: Караганды)">
+  <input id="fromCityInput" placeholder="Откуда (город)">
+  <input id="toCityInput" placeholder="Куда (город)">
 
   <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
 
-  <button id="saveBtn">Сохранить</button>
-  <p id="status" style="color: green; font-weight: bold;"></p>
+  <button onclick="saveUser()">Сохранить</button>
+  <p id="status" style="color:green"></p>
 </div>
-
-<div id="map" style="height: 450px; margin-top: 20px;"></div>
 
 </body>
 </html>
-
