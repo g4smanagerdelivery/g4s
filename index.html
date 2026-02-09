@@ -41,19 +41,33 @@ if (isAdminParam) {
   else throw new Error("Access denied");
 }
 
+// === ФУНКЦИЯ: превратить город → координаты ===
+async function geocodeCity(city) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}`;
+
+  const res = await fetch(url, {
+    headers: { "Accept-Language": "ru" }
+  });
+
+  const data = await res.json();
+  if (!data || data.length === 0) return null;
+
+  return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+}
+
 window.onload = () => {
   const admin = document.getElementById("admin");
   const view = document.getElementById("view");
 
   if (isAdmin) admin.style.display = "block";
 
-  // Инициализация карты (по умолчанию Алматы)
-  map = L.map("map").setView([43.238949, 76.889709], 12);
+  // Карта по умолчанию — Казахстан
+  map = L.map("map").setView([48.0196, 66.9237], 5);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap contributors"
   }).addTo(map);
 
-  marker = L.circleMarker([43.238949, 76.889709], {
+  marker = L.circleMarker([48.0196, 66.9237], {
     radius: 8,
     color: "red"
   }).addTo(map);
@@ -69,7 +83,6 @@ window.onload = () => {
 
       const d = snap.data();
       endTime = new Date(d.endTime);
-
       route = d.route || [];
 
       if (route.length >= 2) {
@@ -85,6 +98,12 @@ window.onload = () => {
 
           <h3>ФИО:</h3>
           <p class="fio">${d.name}</p>
+
+          <h3>Откуда:</h3>
+          <p>${d.fromCity}</p>
+
+          <h3>Куда:</h3>
+          <p>${d.toCity}</p>
 
           <h3>Примерное время прибытия:</h3>
           <p id="time" class="timer">--:--:--</p>
@@ -121,7 +140,7 @@ function updateTimer() {
 function updateMapPosition() {
   if (!endTime || route.length < 2) return;
 
-  const totalTime = 60 * 60 * 1000; // 1 час на весь маршрут
+  const totalTime = 60 * 60 * 1000; // 1 час на маршрут
   const elapsed = totalTime - Math.max(0, endTime - new Date());
   const progress = Math.min(1, elapsed / totalTime);
 
@@ -134,31 +153,36 @@ window.saveUser = async () => {
   const name = uname.value.trim();
   const t = endInput.value;
   const info = uinfo.value.trim();
-  const from = fromCoord.value.trim();
-  const to = toCoord.value.trim();
+  const fromCity = fromCityInput.value.trim();
+  const toCity = toCityInput.value.trim();
 
-  if (!id || !name || !t || !from || !to) {
-    alert("Заполни ID, ФИО, время, Откуда и Куда");
+  if (!id || !name || !t || !fromCity || !toCity) {
+    alert("Заполни ID, ФИО, время, Откуда и Куда (города)");
     return;
   }
 
-  // Разбираем координаты
-  const fromArr = from.split(",").map(n => parseFloat(n.trim()));
-  const toArr = to.split(",").map(n => parseFloat(n.trim()));
+  alert("Ищу координаты городов…");
 
-  if (fromArr.length !== 2 || toArr.length !== 2 ||
-      isNaN(fromArr[0]) || isNaN(fromArr[1]) ||
-      isNaN(toArr[0]) || isNaN(toArr[1])) {
-    alert("Неверный формат координат! Используй: 43.238949, 76.889709");
+  const fromCoords = await geocodeCity(fromCity);
+  const toCoords = await geocodeCity(toCity);
+
+  if (!fromCoords) {
+    alert("Не смог найти город: " + fromCity);
+    return;
+  }
+  if (!toCoords) {
+    alert("Не смог найти город: " + toCity);
     return;
   }
 
-  const route = [fromArr, toArr];
+  const route = [fromCoords, toCoords];
 
   await setDoc(doc(db, "investors", id), {
     name: name,
     endTime: new Date(t).toISOString(),
     info: info || "—",
+    fromCity: fromCity,
+    toCity: toCity,
     route: route
   });
 
@@ -238,8 +262,8 @@ body {
   <input id="uname" placeholder="ФИО">
   <input type="datetime-local" id="endInput">
 
-  <input id="fromCoord" placeholder="Откуда (например: 43.238949, 76.889709)">
-  <input id="toCoord" placeholder="Куда (например: 43.250000, 76.920000)">
+  <input id="fromCityInput" placeholder="Откуда (например: Алматы)">
+  <input id="toCityInput" placeholder="Куда (например: Астана)">
 
   <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
   <button onclick="saveUser()">Сохранить</button>
@@ -249,4 +273,5 @@ body {
 
 </body>
 </html>
+
 
