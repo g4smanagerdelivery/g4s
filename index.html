@@ -65,77 +65,82 @@ window.onload = () => {
     maxZoom: 18
   }).addTo(map);
 
+  // ===== НОРМАЛЬНАЯ ИКОНКА МАШИНЫ =====
   const carIcon = L.icon({
-    iconUrl: "https://cdn-icons-png.flaticon.com/512/2972/2972185.png",
+    iconUrl: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
     iconSize: [40, 40]
   });
 
   carMarker = L.marker([48.0196, 66.9237], { icon: carIcon }).addTo(map);
 
-  if (userId) {
-    const ref = doc(db, "investors", userId);
+  const infoBox = document.getElementById("info-box");
 
-    onSnapshot(ref, async (snap) => {
-      if (!snap.exists()) {
-        document.getElementById("info-box").innerHTML =
-          "<h2>Данные не найдены</h2>";
-        return;
-      }
-
-      const d = snap.data();
-      endTime = new Date(d.endTime);
-      startTime = new Date(endTime.getTime() - 3 * 60 * 60 * 1000);
-
-      const from = (d.fromCity || "").toLowerCase();
-      const to = (d.toCity || "").toLowerCase();
-
-      const startCoords = CITY_COORDS[from] || [48.0196, 66.9237];
-      const endCoords = CITY_COORDS[to] || [48.0196, 66.9237];
-
-      if (routeLine) map.removeLayer(routeLine);
-
-      const router = L.Routing.osrmv1();
-
-      router.route(
-        [
-          L.latLng(startCoords[0], startCoords[1]),
-          L.latLng(endCoords[0], endCoords[1])
-        ],
-        (err, res) => {
-          if (err) {
-            console.error("Ошибка маршрута:", err);
-            return;
-          }
-
-          routeCoords = res.routes[0].coordinates.map(c => [c.lat, c.lng]);
-
-          routeLine = L.polyline(routeCoords, {
-            color: "blue",
-            weight: 4
-          }).addTo(map);
-
-          map.fitBounds(routeLine.getBounds());
-        }
-      );
-
-      document.getElementById("info-box").innerHTML = `
-        <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
-
-        <h3>ФИО:</h3>
-        <p class="fio">${d.name}</p>
-
-        <h3>Примерное время прибытия:</h3>
-        <p id="time" class="timer">--:--:--</p>
-
-        <h3>Маршрут:</h3>
-        <p><b>Откуда:</b> ${d.fromCity}</p>
-        <p><b>Куда:</b> ${d.toCity}</p>
-
-        <h3>Информация о доставке:</h3>
-        <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
-      `;
-    });
+  if (!userId) {
+    infoBox.innerHTML = "<h2>Нет данных. Используйте ссылку с ?user=ID</h2>";
+    return;
   }
+
+  const ref = doc(db, "investors", userId);
+
+  onSnapshot(ref, async (snap) => {
+    if (!snap.exists()) {
+      infoBox.innerHTML = "<h2>Данные не найдены</h2>";
+      return;
+    }
+
+    const d = snap.data();
+    endTime = new Date(d.endTime);
+    startTime = new Date(endTime.getTime() - 3 * 60 * 60 * 1000);
+
+    const from = (d.fromCity || "").toLowerCase();
+    const to = (d.toCity || "").toLowerCase();
+
+    const startCoords = CITY_COORDS[from] || [48.0196, 66.9237];
+    const endCoords = CITY_COORDS[to] || [48.0196, 66.9237];
+
+    if (routeLine) map.removeLayer(routeLine);
+
+    const router = L.Routing.osrmv1();
+
+    router.route(
+      [
+        L.latLng(startCoords[0], startCoords[1]),
+        L.latLng(endCoords[0], endCoords[1])
+      ],
+      (err, res) => {
+        if (err) {
+          console.error("Ошибка маршрута:", err);
+          return;
+        }
+
+        routeCoords = res.routes[0].coordinates.map(c => [c.lat, c.lng]);
+
+        routeLine = L.polyline(routeCoords, {
+          color: "blue",
+          weight: 4
+        }).addTo(map);
+
+        map.fitBounds(routeLine.getBounds());
+      }
+    );
+
+    infoBox.innerHTML = `
+      <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+
+      <h3>ФИО:</h3>
+      <p class="fio">${d.name}</p>
+
+      <h3>Примерное время прибытия:</h3>
+      <p id="time" class="timer">--:--:--</p>
+
+      <h3>Маршрут:</h3>
+      <p><b>Откуда:</b> ${d.fromCity}</p>
+      <p><b>Куда:</b> ${d.toCity}</p>
+
+      <h3>Информация о доставке:</h3>
+      <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
+    `;
+  });
 
   setInterval(updateTimerAndCar, 1000);
 };
@@ -212,7 +217,6 @@ body {
   padding: 0;
 }
 
-/* ======== ГЛАВНЫЙ КОНТЕЙНЕР (важно!) ======== */
 #layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -222,7 +226,6 @@ body {
   padding: 10px;
 }
 
-/* ======== МОБИЛЬНАЯ ВЕРСИЯ ======== */
 @media (max-width: 800px) {
   #layout {
     grid-template-columns: 1fr;
@@ -233,7 +236,6 @@ body {
   }
 }
 
-/* ======== КАРТА ======== */
 #map {
   height: 500px;
   width: 100%;
@@ -241,7 +243,6 @@ body {
   box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
 
-/* ======== КАРТОЧКА С ИНФО ======== */
 #info-box {
   background: white;
   padding: 20px;
