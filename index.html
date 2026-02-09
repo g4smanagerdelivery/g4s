@@ -4,13 +4,17 @@
 <meta charset="UTF-8">
 <title>G4S Инкассационная доставка</title>
 
+<!-- Leaflet (карта) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
 import {
   getFirestore, doc, setDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
-// ===== ТВОЯ FIREBASE =====
+// ===== FIREBASE =====
 const firebaseConfig = {
   apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
   authDomain: "auction-top7.firebaseapp.com",
@@ -23,6 +27,16 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// ===== ГОРОДА → КООРДИНАТЫ (БЕЗ КАРТЫ ВВОДА) =====
+const CITY_COORDS = {
+  "астана": [51.1605, 71.4704],
+  "караганда": [49.8028, 73.0877],
+  "алматы": [43.2220, 76.8512],
+  "шымкент": [42.3417, 69.5901],
+  "костанай": [53.2140, 63.6246],
+  "актау": [43.6500, 51.2000]
+};
+
 // ===== ПАРАМЕТРЫ И АДМИН =====
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
@@ -31,6 +45,11 @@ const isAdminParam = params.get("admin") === "true";
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
+let startTime = null;
+let startCoords = null;
+let endCoords = null;
+let carMarker = null;
+let map = null;
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -38,12 +57,22 @@ if (isAdminParam) {
   else throw new Error("Access denied");
 }
 
-// ===== ЗАГРУЗКА СТРАНИЦЫ =====
 window.onload = () => {
   const admin = document.getElementById("admin");
   const view = document.getElementById("view");
 
   if (isAdmin) admin.style.display = "block";
+
+  // ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ =====
+  map = L.map("map").setView([48.0196, 66.9237], 5);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+  const carIcon = L.icon({
+    iconUrl: "https://cdn-icons-png.flaticon.com/512/2972/2972185.png",
+    iconSize: [40, 40]
+  });
+
+  carMarker = L.marker([48.0196, 66.9237], { icon: carIcon }).addTo(map);
 
   if (userId) {
     const ref = doc(db, "investors", userId);
@@ -56,12 +85,24 @@ window.onload = () => {
 
       const d = snap.data();
       endTime = new Date(d.endTime);
+      startTime = new Date(endTime.getTime() - 3 * 60 * 60 * 1000); // условно 3 часа пути
+
+      const from = (d.fromCity || "").toLowerCase();
+      const to = (d.toCity || "").toLowerCase();
+
+      startCoords = CITY_COORDS[from] || [48.0196, 66.9237];
+      endCoords = CITY_COORDS[to] || [48.0196, 66.9237];
+
+      L.marker(startCoords).addTo(map).bindPopup("Откуда: " + d.fromCity);
+      L.marker(endCoords).addTo(map).bindPopup("Куда: " + d.toCity);
+
+      map.fitBounds([startCoords, endCoords]);
 
       view.innerHTML = `
         <div class="card">
           <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-          <h3>Получатель:</h3>
+          <h3>ФИО:</h3>
           <p class="fio">${d.name}</p>
 
           <h3>Примерное время прибытия:</h3>
@@ -78,13 +119,20 @@ window.onload = () => {
     });
   }
 
-  setInterval(updateTimer, 1000);
+  setInterval(updateTimerAndCar, 1000);
 };
 
-// ===== ТАЙМЕР =====
-function updateTimer() {
-  if (!endTime) return;
-  const diff = Math.max(0, endTime - new Date());
+// ===== ТАЙМЕР + ДВИЖЕНИЕ МАШИНЫ =====
+function updateTimerAndCar() {
+  if (!endTime || !startCoords || !endCoords) return;
+
+  const now = new Date();
+  const total = endTime - startTime;
+  const passed = now - startTime;
+  const progress = Math.min(1, Math.max(0, passed / total));
+
+  // Таймер
+  const diff = Math.max(0, endTime - now);
   const h = Math.floor(diff / 36e5);
   const m = Math.floor(diff % 36e5 / 6e4);
   const s = Math.floor(diff % 6e4 / 1000);
@@ -92,14 +140,19 @@ function updateTimer() {
   const timeEl = document.getElementById("time");
   if (timeEl) {
     timeEl.textContent = `${h}ч ${m}м ${s}с`;
-    timeEl.style.color = h < 5 ? "red" : "black";
+    timeEl.style.color = h < 1 ? "red" : "black";
   }
+
+  // Двигаем машинку по прямой
+  const lat = startCoords[0] + (endCoords[0] - startCoords[0]) * progress;
+  const lng = startCoords[1] + (endCoords[1] - startCoords[1]) * progress;
+
+  carMarker.setLatLng([lat, lng]);
 }
 
 // ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
 window.saveUser = async () => {
   const status = document.getElementById("status");
-  status.textContent = "Сохраняю... ⏳";
 
   try {
     const id = uid.value.trim();
@@ -110,8 +163,7 @@ window.saveUser = async () => {
     const toCity = toCityInput.value.trim();
 
     if (!id || !name || !t || !fromCity || !toCity) {
-      alert("Заполни все поля: ID, ФИО, время, Откуда и Куда");
-      status.textContent = "";
+      alert("Заполни все поля");
       return;
     }
 
@@ -130,12 +182,11 @@ window.saveUser = async () => {
     await navigator.clipboard.writeText(link);
 
     status.textContent = "Сохранено ✅";
-    alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
+    alert("Сохранено!\nСсылка скопирована:\n\n" + link);
 
   } catch (err) {
     console.error("Ошибка сохранения:", err);
-    status.textContent = "Ошибка ❌ (смотри консоль)";
-    alert("Ошибка! Открой F12 → Console и пришли мне ошибку.");
+    alert("Ошибка — смотри F12 → Console");
   }
 };
 </script>
@@ -144,8 +195,17 @@ window.saveUser = async () => {
 body {
   font-family: Arial;
   background-color: #f2f2f2;
-  padding: 30px;
+  padding: 20px;
   text-align: center;
+}
+
+#map {
+  height: 400px;
+  width: 100%;
+  max-width: 900px;
+  margin: 20px auto;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
 
 .card {
@@ -155,25 +215,6 @@ body {
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-.fio {
-  font-size: 22px;
-  font-weight: bold;
-}
-
-.timer {
-  font-size: 24px;
-  font-weight: bold;
-}
-
-.info-box {
-  background: #f3f3f3;
-  padding: 15px;
-  border-radius: 8px;
-  margin: 10px 0;
-  text-align: left;
-  font-size: 18px;
 }
 
 #admin {
@@ -200,6 +241,8 @@ body {
 <div id="view">
   <h1>Загрузка…</h1>
 </div>
+
+<div id="map"></div>
 
 <div id="admin">
   <h2>Админ-панель</h2>
