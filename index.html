@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>G4S Инкассационная доставка</title>
+<title>G4S Доставка</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -33,7 +33,7 @@ const isAdminParam = params.get("admin") === "true";
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 
-// ===== КАРТА И МАШИНА =====
+// ===== КАРТА И ДВИЖЕНИЕ =====
 let map, carMarker, routeLine;
 let routePoints = [];
 let endTime = null;
@@ -53,7 +53,7 @@ window.onload = () => {
   if (userId) {
     const ref = doc(db, "investors", userId);
 
-    onSnapshot(ref, async (snap) => {
+    onSnapshot(ref, (snap) => {
       if (!snap.exists()) {
         document.getElementById("fio").textContent = "Данные не найдены";
         return;
@@ -69,7 +69,10 @@ window.onload = () => {
       document.getElementById("infoBox").innerHTML =
         (d.info || "").replace(/\n/g, "<br>");
 
-      await buildRoute(d.fromCity, d.toCity);
+      buildRouteFromCoords(
+        [d.fromLat, d.fromLng],
+        [d.toLat, d.toLng]
+      );
     });
   }
 
@@ -96,7 +99,7 @@ function updateTimerAndCar() {
   carMarker.setLatLng(routePoints[index]);
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ =====
+// ===== КАРТА =====
 function initMap() {
   map = L.map("map").setView([48.0196, 66.9237], 6);
 
@@ -113,81 +116,49 @@ function initMap() {
   carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 }
 
-// ===== НАДЁЖНЫЙ ГЕОКОДИНГ (2 сервиса + запасной вариант) =====
-async function geocodeCity(city) {
-  // 1) Пробуем maps.co
-  try {
-    const url =
-      "https://geocode.maps.co/search?q=" +
-      encodeURIComponent(city + ", Kazakhstan");
+// ===== СТРОИМ МАРШРУТ БЕЗ ГЕОКОДИНГА (ВАЖНО!) =====
+function buildRouteFromCoords(from, to) {
+  if (routeLine) map.removeLayer(routeLine);
 
-    const res = await fetch(url);
-    const data = await res.json();
+  const distanceKm = map.distance(
+    L.latLng(from[0], from[1]),
+    L.latLng(to[0], to[1])
+  ) / 1000;
 
-    if (data && data.length > 0) {
-      return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-    }
-  } catch (e) {
-    console.warn("maps.co не сработал, пробуем запасной вариант...");
+  const steps = Math.max(100, Math.round(distanceKm * 20));
+
+  routePoints = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const lat = from[0] + (to[0] - from[0]) * (i / steps);
+    const lng = from[1] + (to[1] - from[1]) * (i / steps);
+    routePoints.push([lat, lng]);
   }
 
-  // 2) Запасной сервис (Photon)
-  try {
-    const url =
-      "https://photon.komoot.io/api/?q=" +
-      encodeURIComponent(city + ", Kazakhstan");
+  routeLine = L.polyline(routePoints, {
+    color: "#007bff",
+    weight: 5
+  }).addTo(map);
 
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (data.features && data.features.length > 0) {
-      const [lng, lat] = data.features[0].geometry.coordinates;
-      return [lat, lng];
-    }
-  } catch (e) {
-    console.warn("Photon тоже не сработал...");
-  }
-
-  // 3) Если всё плохо — даём примерные координаты Казахстана
-  console.error("Геокодинг не удался для:", city);
-  alert("Не удалось точно найти город: " + city + "\nСтрою маршрут приблизительно.");
-
-  return [48.0196, 66.9237]; // центр Казахстана (запас)
+  map.fitBounds(routeLine.getBounds());
+  carMarker.setLatLng(routePoints[0]);
 }
 
-// ===== СТРОИМ МАРШРУТ =====
-async function buildRoute(fromCity, toCity) {
-  try {
-    const from = await geocodeCity(fromCity);
-    const to = await geocodeCity(toCity);
+// ===== ГЕОКОДИНГ ТОЛЬКО В АДМИНКЕ =====
+async function geocodeCity(city) {
+  const url =
+    "https://photon.komoot.io/api/?q=" +
+    encodeURIComponent(city + ", Kazakhstan");
 
-    if (routeLine) map.removeLayer(routeLine);
+  const res = await fetch(url);
+  const data = await res.json();
 
-    const distanceKm = map.distance(
-      L.latLng(from[0], from[1]),
-      L.latLng(to[0], to[1])
-    ) / 1000;
-
-    const steps = Math.max(100, Math.round(distanceKm * 20));
-
-    routePoints = [];
-
-    for (let i = 0; i <= steps; i++) {
-      const lat = from[0] + (to[0] - from[0]) * (i / steps);
-      const lng = from[1] + (to[1] - from[1]) * (i / steps);
-      routePoints.push([lat, lng]);
-    }
-
-    routeLine = L.polyline(routePoints, {
-      color: "#007bff",
-      weight: 5
-    }).addTo(map);
-
-    map.fitBounds(routeLine.getBounds());
-    carMarker.setLatLng(routePoints[0]);
-  } catch (e) {
-    console.error(e);
-    alert("Ошибка маршрута — но карта всё равно загрузилась.");
+  if (data.features && data.features.length > 0) {
+    const [lng, lat] = data.features[0].geometry.coordinates;
+    return { lat, lng };
+  } else {
+    alert("Город не найден: " + city);
+    throw new Error("Geocode failed");
   }
 }
 
@@ -206,12 +177,22 @@ window.saveUser = async () => {
       return;
     }
 
+    document.getElementById("status").textContent =
+      "Ищу координаты городов...";
+
+    const from = await geocodeCity(fromCity);
+    const to = await geocodeCity(toCity);
+
     await setDoc(doc(db, "investors", id), {
       name,
       endTime: new Date(t).toISOString(),
       info: info || "—",
       fromCity,
-      toCity
+      toCity,
+      fromLat: from.lat,
+      fromLng: from.lng,
+      toLat: to.lat,
+      toLng: to.lng
     });
 
     const link =
@@ -220,10 +201,13 @@ window.saveUser = async () => {
 
     await navigator.clipboard.writeText(link);
 
-    alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
+    document.getElementById("status").textContent =
+      "Сохранено! Ссылка скопирована.";
+    alert("Готово! Ссылка скопирована:\n\n" + link);
   } catch (err) {
     console.error(err);
-    alert("Ошибка — смотри F12 → Console");
+    document.getElementById("status").textContent =
+      "Ошибка — смотри F12 → Console";
   }
 };
 </script>
@@ -291,6 +275,8 @@ body { margin: 0; font-family: Arial; }
       <input id="toCityInput" placeholder="Куда (город)">
 
       <textarea id="uinfo" rows="5" placeholder="Информация"></textarea>
+
+      <p id="status" style="color: green;"></p>
 
       <button onclick="saveUser()">Сохранить</button>
     </div>
