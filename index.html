@@ -104,7 +104,7 @@ function initMap() {
   carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 }
 
-// ===== ПОЛУЧАЕМ КООРДИНАТЫ ГОРОДОВ (НАДЁЖНО) =====
+// ===== ГЕОКОДИНГ (БЕЗ CORS-ОШИБОК) =====
 async function geocodeCity(city) {
   const url =
     "https://geocode.maps.co/search?q=" +
@@ -120,24 +120,28 @@ async function geocodeCity(city) {
   return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
 }
 
-// ===== СТРОИМ МАРШРУТ И ЗАПУСКАЕМ МАШИНУ =====
+// ===== СТРОИМ МАРШРУТ =====
 async function buildRoute(fromCity, toCity) {
   try {
     const from = await geocodeCity(fromCity);
     const to = await geocodeCity(toCity);
 
-    // Удаляем старый маршрут
     if (routeLine) map.removeLayer(routeLine);
 
-    // Делаем плавную линию между точками
+    // считаем расстояние
+    const distanceKm = map.distance(
+      L.latLng(from[0], from[1]),
+      L.latLng(to[0], to[1])
+    ) / 1000;
+
+    // 10 точек на каждый километр, но минимум 50
+    const steps = Math.max(50, Math.round(distanceKm * 10));
+
     routePoints = [];
 
-    const steps = 50; // сколько точек анимации
     for (let i = 0; i <= steps; i++) {
-      const lat =
-        from[0] + (to[0] - from[0]) * (i / steps);
-      const lng =
-        from[1] + (to[1] - from[1]) * (i / steps);
+      const lat = from[0] + (to[0] - from[0]) * (i / steps);
+      const lng = from[1] + (to[1] - from[1]) * (i / steps);
       routePoints.push([lat, lng]);
     }
 
@@ -154,13 +158,16 @@ async function buildRoute(fromCity, toCity) {
     startCar();
   } catch (e) {
     console.error(e);
-    alert("Ошибка маршрута — но карта всё равно загрузилась.");
+    alert("Ошибка маршрута — проверь названия городов.");
   }
 }
 
-// ===== АНИМАЦИЯ МАШИНЫ =====
+// ===== АНИМАЦИЯ МАШИНЫ (НОРМАЛЬНАЯ СКОРОСТЬ) =====
 function startCar() {
   if (carInterval) clearInterval(carInterval);
+
+  const totalTimeMs = 60 * 1000; // ВСЕГДА ~60 секунд на маршрут
+  const stepTime = totalTimeMs / routePoints.length;
 
   carInterval = setInterval(() => {
     if (carIndex >= routePoints.length) {
@@ -170,7 +177,7 @@ function startCar() {
 
     carMarker.setLatLng(routePoints[carIndex]);
     carIndex++;
-  }, 300);
+  }, stepTime);
 }
 
 // ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
@@ -284,4 +291,3 @@ body { margin: 0; font-family: Arial; }
 
 </body>
 </html>
-
