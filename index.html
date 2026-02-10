@@ -4,11 +4,8 @@
 <meta charset="UTF-8">
 <title>G4S Инкассационная доставка</title>
 
-<!-- LEAFLET -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<!-- Routing Machine -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
@@ -35,9 +32,9 @@ const isAdminParam = params.get("admin") === "true";
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
-let routeControl = null;
 let routeCoords = [];
 let carMarker = null;
+let routeControl = null;
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -48,7 +45,6 @@ if (isAdminParam) {
 window.onload = () => {
   document.getElementById("admin").style.display = isAdmin ? "block" : "none";
 
-  // Карта (нейтральная, без флагов)
   const map = L.map("map").setView([48.0196, 66.9237], 5);
 
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
@@ -63,7 +59,7 @@ window.onload = () => {
   if (userId) {
     const ref = doc(db, "investors", userId);
 
-    onSnapshot(ref, async (snap) => {
+    onSnapshot(ref, (snap) => {
       if (!snap.exists()) {
         document.getElementById("view").innerHTML = "<h1>Данные не найдены</h1>";
         return;
@@ -90,25 +86,18 @@ window.onload = () => {
         </div>
       `;
 
-      // Получаем координаты БЕЗ CORS (Photon — работает у клиента)
-      const fromCoords = await geocodeCity(d.from);
-      const toCoords = await geocodeCity(d.to);
-
-      if (!fromCoords || !toCoords) {
-        alert("Ошибка маршрута — проверь названия городов");
-        return;
-      }
+      // ===== ВАЖНО: клиент использует УЖЕ ГОТОВЫЕ координаты =====
+      const from = [d.fromLat, d.fromLng];
+      const to = [d.toLat, d.toLng];
 
       if (routeControl) map.removeControl(routeControl);
 
       routeControl = L.Routing.control({
         waypoints: [
-          L.latLng(fromCoords.lat, fromCoords.lng),
-          L.latLng(toCoords.lat, toCoords.lng)
+          L.latLng(from[0], from[1]),
+          L.latLng(to[0], to[1])
         ],
-        lineOptions: {
-          styles: [{ color: "black", weight: 4 }]
-        },
+        lineOptions: { styles: [{ color: "black", weight: 4 }] },
         createMarker: () => null
       }).addTo(map);
 
@@ -128,18 +117,6 @@ window.onload = () => {
   }, 1000);
 };
 
-async function geocodeCity(city) {
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(city + ", Kazakhstan")}`;
-  const r = await fetch(url);
-  const j = await r.json();
-  if (!j.features || j.features.length === 0) return null;
-
-  return {
-    lng: j.features[0].geometry.coordinates[0],
-    lat: j.features[0].geometry.coordinates[1]
-  };
-}
-
 function updateTimer() {
   if (!endTime) return;
   const diff = Math.max(0, endTime - new Date());
@@ -152,18 +129,28 @@ function updateTimer() {
 }
 
 function moveCarByTime() {
-  if (!carMarker || !routeCoords || !endTime) return;
+  if (!carMarker || routeCoords.length === 0 || !endTime) return;
 
-  const total = endTime - Date.now() + (routeCoords.length * 1000);
-  const passed = Math.max(0, total);
-  const progress = 1 - passed / (routeCoords.length * 1000);
+  const totalMs = 2 * 60 * 60 * 1000; // 2 часа условно
+  const elapsed = Math.max(0, totalMs - (endTime - Date.now()));
+  const progress = Math.min(1, elapsed / totalMs);
 
-  const idx = Math.min(
-    routeCoords.length - 1,
-    Math.floor(progress * routeCoords.length)
-  );
-
+  const idx = Math.floor(progress * (routeCoords.length - 1));
   carMarker.setLatLng(routeCoords[idx]);
+}
+
+// ======== АДМИН: ИЩЕМ КООРДИНАТЫ ТОЛЬКО У ВАС ========
+async function geocodeCity(city) {
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(city + ", Kazakhstan")}`;
+  const r = await fetch(url);
+  const j = await r.json();
+
+  if (!j.features || j.features.length === 0) return null;
+
+  return {
+    lat: j.features[0].geometry.coordinates[1],
+    lng: j.features[0].geometry.coordinates[0]
+  };
 }
 
 window.saveUser = async () => {
@@ -179,6 +166,16 @@ window.saveUser = async () => {
     return;
   }
 
+  document.getElementById("status").innerText = "Ищу координаты городов…";
+
+  const fromC = await geocodeCity(from);
+  const toC = await geocodeCity(to);
+
+  if (!fromC || !toC) {
+    alert("Ошибка маршрута — проверь названия городов.");
+    return;
+  }
+
   document.getElementById("status").innerText = "Сохраняю… ⏳";
 
   await setDoc(doc(db, "investors", id), {
@@ -186,6 +183,10 @@ window.saveUser = async () => {
     endTime: new Date(t).toISOString(),
     from,
     to,
+    fromLat: fromC.lat,
+    fromLng: fromC.lng,
+    toLat: toC.lat,
+    toLng: toC.lng,
     info: info || "—"
   });
 
@@ -198,17 +199,12 @@ window.saveUser = async () => {
 </script>
 
 <style>
-body {
-  font-family: Arial;
-  margin: 0;
-  display: flex;
-}
+body { font-family: Arial; margin: 0; display: flex; }
 
 #left {
   width: 40%;
   padding: 20px;
   background: #f2f2f2;
-  overflow-y: auto;
 }
 
 #map {
@@ -220,7 +216,6 @@ body {
   background: white;
   padding: 20px;
   border-radius: 12px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
 
 #admin {
@@ -228,14 +223,9 @@ body {
   margin-top: 20px;
   background: white;
   padding: 20px;
-  border-radius: 8px;
 }
 
-input, textarea {
-  width: 100%;
-  margin: 5px 0;
-  padding: 8px;
-}
+input, textarea { width: 100%; margin: 5px 0; padding: 8px; }
 </style>
 </head>
 
@@ -250,7 +240,7 @@ input, textarea {
     <input type="datetime-local" id="endInput">
     <input id="ufrom" placeholder="Откуда (город)">
     <input id="uto" placeholder="Куда (город)">
-    <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
+    <textarea id="uinfo" rows="5" placeholder="Информация"></textarea>
     <button onclick="saveUser()">Сохранить</button>
     <p id="status" style="color:green"></p>
   </div>
