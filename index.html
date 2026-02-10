@@ -2,21 +2,20 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>G4S Доставка</title>
+<title>G4S Инкассационная доставка</title>
 
+<!-- LEAFLET -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Routing Machine -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-import {
-  getFirestore, doc, setDoc, onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
-// ===== FIREBASE =====
 const firebaseConfig = {
   apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
   authDomain: "auction-top7.firebaseapp.com",
@@ -35,12 +34,10 @@ const isAdminParam = params.get("admin") === "true";
 
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
-
-// ===== КАРТА / МАРШРУТ / МАШИНА =====
-let map, carMarker, routingControl;
-let routePoints = [];
 let endTime = null;
-let totalDurationMs = 0;
+let routeControl = null;
+let routeCoords = [];
+let carMarker = null;
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -49,194 +46,165 @@ if (isAdminParam) {
 }
 
 window.onload = () => {
-  if (isAdmin) document.getElementById("admin").style.display = "block";
+  document.getElementById("admin").style.display = isAdmin ? "block" : "none";
 
-  initMap();
+  // Карта (нейтральная, без флагов)
+  const map = L.map("map").setView([48.0196, 66.9237], 5);
+
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    attribution: "© OpenStreetMap, © Carto"
+  }).addTo(map);
+
+  const carIcon = L.icon({
+    iconUrl: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
+    iconSize: [32, 32]
+  });
 
   if (userId) {
     const ref = doc(db, "investors", userId);
 
-    onSnapshot(ref, (snap) => {
+    onSnapshot(ref, async (snap) => {
       if (!snap.exists()) {
-        document.getElementById("fio").textContent = "Данные не найдены";
+        document.getElementById("view").innerHTML = "<h1>Данные не найдены</h1>";
         return;
       }
 
       const d = snap.data();
       endTime = new Date(d.endTime);
-      totalDurationMs = Math.max(1000, endTime - new Date());
 
-      document.getElementById("fio").textContent = d.name;
-      document.getElementById("fromCity").textContent = d.fromCity;
-      document.getElementById("toCity").textContent = d.toCity;
-      document.getElementById("infoBox").innerHTML =
-        (d.info || "").replace(/\n/g, "<br>");
+      document.getElementById("view").innerHTML = `
+        <div class="card">
+          <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+          <h3>Получатель:</h3>
+          <p class="fio">${d.name}</p>
 
-      buildRouteOnRoads(
-        [d.fromLat, d.fromLng],
-        [d.toLat, d.toLng]
-      );
+          <h3>Примерное время прибытия:</h3>
+          <p id="time" class="timer">--:--:--</p>
+
+          <h3>Маршрут:</h3>
+          <p><b>Откуда:</b> ${d.from}</p>
+          <p><b>Куда:</b> ${d.to}</p>
+
+          <h3>Информация:</h3>
+          <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
+        </div>
+      `;
+
+      // Получаем координаты БЕЗ CORS (Photon — работает у клиента)
+      const fromCoords = await geocodeCity(d.from);
+      const toCoords = await geocodeCity(d.to);
+
+      if (!fromCoords || !toCoords) {
+        alert("Ошибка маршрута — проверь названия городов");
+        return;
+      }
+
+      if (routeControl) map.removeControl(routeControl);
+
+      routeControl = L.Routing.control({
+        waypoints: [
+          L.latLng(fromCoords.lat, fromCoords.lng),
+          L.latLng(toCoords.lat, toCoords.lng)
+        ],
+        lineOptions: {
+          styles: [{ color: "black", weight: 4 }]
+        },
+        createMarker: () => null
+      }).addTo(map);
+
+      routeControl.on("routesfound", function(e) {
+        routeCoords = e.routes[0].coordinates;
+        map.fitBounds(L.latLngBounds(routeCoords));
+
+        if (carMarker) map.removeLayer(carMarker);
+        carMarker = L.marker(routeCoords[0], { icon: carIcon }).addTo(map);
+      });
     });
   }
 
-  setInterval(updateTimerAndCar, 1000);
+  setInterval(() => {
+    updateTimer();
+    moveCarByTime();
+  }, 1000);
 };
 
-function updateTimerAndCar() {
-  if (!endTime || routePoints.length === 0) return;
+async function geocodeCity(city) {
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(city + ", Kazakhstan")}`;
+  const r = await fetch(url);
+  const j = await r.json();
+  if (!j.features || j.features.length === 0) return null;
 
-  const now = new Date();
-  let diff = Math.max(0, endTime - now);
+  return {
+    lng: j.features[0].geometry.coordinates[0],
+    lat: j.features[0].geometry.coordinates[1]
+  };
+}
 
+function updateTimer() {
+  if (!endTime) return;
+  const diff = Math.max(0, endTime - new Date());
   const h = Math.floor(diff / 36e5);
   const m = Math.floor(diff % 36e5 / 6e4);
   const s = Math.floor(diff % 6e4 / 1000);
 
-  document.getElementById("time").textContent =
-    `${h}ч ${m}м ${s}с`;
-
-  const passed = totalDurationMs - diff;
-  const progress = Math.min(1, passed / totalDurationMs);
-  const index = Math.floor(progress * (routePoints.length - 1));
-
-  carMarker.setLatLng(routePoints[index]);
+  const el = document.getElementById("time");
+  if (el) el.textContent = `${h}ч ${m}м ${s}с`;
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ =====
-function initMap() {
-  map = L.map("map").setView([48.0196, 66.9237], 6);
+function moveCarByTime() {
+  if (!carMarker || !routeCoords || !endTime) return;
 
-  L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-    { attribution: "Esri" }
-  ).addTo(map);
+  const total = endTime - Date.now() + (routeCoords.length * 1000);
+  const passed = Math.max(0, total);
+  const progress = 1 - passed / (routeCoords.length * 1000);
 
-  const carIcon = L.icon({
-    iconUrl: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
-    iconSize: [40, 40]
-  });
+  const idx = Math.min(
+    routeCoords.length - 1,
+    Math.floor(progress * routeCoords.length)
+  );
 
-  carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
+  carMarker.setLatLng(routeCoords[idx]);
 }
 
-// ===== МАРШРУТ ТОЛЬКО ПО ДОРОГАМ (БЕЗ ПРЯМОЙ ЛИНИИ) =====
-function buildRouteOnRoads(from, to) {
-  if (routingControl) {
-    map.removeControl(routingControl);
-  }
-
-  routingControl = L.Routing.control({
-    waypoints: [
-      L.latLng(from[0], from[1]),
-      L.latLng(to[0], to[1])
-    ],
-    lineOptions: {
-      styles: [{ color: "#007bff", weight: 5 }]
-    },
-    addWaypoints: false,
-    draggableWaypoints: false,
-    fitSelectedRoutes: true,
-    show: false,
-
-    router: L.Routing.osrmv1({
-      serviceUrl: "https://routing.openstreetmap.de/routed-car/route/v1"
-    })
-  }).addTo(map);
-
-  routingControl.on("routesfound", function(e) {
-    const route = e.routes[0];
-    routePoints = [];
-
-    route.coordinates.forEach(coord => {
-      routePoints.push([coord.lat, coord.lng]);
-    });
-
-    carMarker.setLatLng(routePoints[0]);
-    map.fitBounds(route.getBounds());
-  });
-
-  routingControl.on("routingerror", function() {
-    alert("Ошибка маршрута — проверь названия городов (пиши крупные города).");
-  });
-}
-
-// ===== ГЕОКОДИНГ ТОЛЬКО В АДМИНКЕ =====
-async function geocodeCity(city) {
-  const url =
-    "https://photon.komoot.io/api/?q=" +
-    encodeURIComponent(city + ", Kazakhstan");
-
-  const res = await fetch(url);
-  const data = await res.json();
-
-  if (data.features && data.features.length > 0) {
-    const [lng, lat] = data.features[0].geometry.coordinates;
-    return { lat, lng };
-  } else {
-    alert("Город не найден: " + city);
-    throw new Error("Geocode failed");
-  }
-}
-
-// ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
 window.saveUser = async () => {
-  try {
-    const id = uid.value.trim();
-    const name = uname.value.trim();
-    const t = endInput.value;
-    const info = uinfo.value.trim();
-    const fromCity = fromCityInput.value.trim();
-    const toCity = toCityInput.value.trim();
+  const id = uid.value.trim();
+  const name = uname.value.trim();
+  const t = endInput.value;
+  const from = ufrom.value.trim();
+  const to = uto.value.trim();
+  const info = uinfo.value;
 
-    if (!id || !name || !t || !fromCity || !toCity) {
-      alert("Заполни все поля!");
-      return;
-    }
-
-    document.getElementById("status").textContent =
-      "Ищу координаты городов...";
-
-    const from = await geocodeCity(fromCity);
-    const to = await geocodeCity(toCity);
-
-    await setDoc(doc(db, "investors", id), {
-      name,
-      endTime: new Date(t).toISOString(),
-      info: info || "—",
-      fromCity,
-      toCity,
-      fromLat: from.lat,
-      fromLng: from.lng,
-      toLat: to.lat,
-      toLng: to.lng
-    });
-
-    const link =
-      "https://g4smanagerdelivery.github.io/g4s/?user=" +
-      encodeURIComponent(id);
-
-    await navigator.clipboard.writeText(link);
-
-    document.getElementById("status").textContent =
-      "Сохранено! Ссылка скопирована.";
-    alert("Готово! Ссылка скопирована:\n\n" + link);
-  } catch (err) {
-    console.error(err);
-    document.getElementById("status").textContent =
-      "Ошибка — смотри F12 → Console";
+  if (!id || !name || !t || !from || !to) {
+    alert("Заполни все поля!");
+    return;
   }
+
+  document.getElementById("status").innerText = "Сохраняю… ⏳";
+
+  await setDoc(doc(db, "investors", id), {
+    name,
+    endTime: new Date(t).toISOString(),
+    from,
+    to,
+    info: info || "—"
+  });
+
+  const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+  await navigator.clipboard.writeText(link);
+
+  document.getElementById("status").innerHTML =
+    `Готово ✅<br>Ссылка скопирована:<br><b>${link}</b>`;
 };
 </script>
 
 <style>
-body { margin: 0; font-family: Arial; }
-
-.container {
+body {
+  font-family: Arial;
+  margin: 0;
   display: flex;
-  height: 100vh;
 }
 
-#panel {
+#left {
   width: 40%;
   padding: 20px;
   background: #f2f2f2;
@@ -251,56 +219,43 @@ body { margin: 0; font-family: Arial; }
 .card {
   background: white;
   padding: 20px;
-  border-radius: 10px;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
 
-#admin { display: none; margin-top: 20px; }
+#admin {
+  display: none;
+  margin-top: 20px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+input, textarea {
+  width: 100%;
+  margin: 5px 0;
+  padding: 8px;
+}
 </style>
 </head>
 
 <body>
+<div id="left">
+  <div id="view"><h1>Загрузка…</h1></div>
 
-<div class="container">
-
-  <div id="panel">
-    <div class="card">
-      <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
-
-      <h3>Получатель:</h3>
-      <p id="fio">Загрузка…</p>
-
-      <h3>Примерное время прибытия:</h3>
-      <p id="time">--:--:--</p>
-
-      <h3>Маршрут:</h3>
-      <p><b>Откуда:</b> <span id="fromCity"></span></p>
-      <p><b>Куда:</b> <span id="toCity"></span></p>
-
-      <h3>Информация:</h3>
-      <div id="infoBox"></div>
-    </div>
-
-    <div id="admin">
-      <h2>Админ-панель</h2>
-
-      <input id="uid" placeholder="ID (например: Tuman)">
-      <input id="uname" placeholder="ФИО">
-      <input type="datetime-local" id="endInput">
-
-      <input id="fromCityInput" placeholder="Откуда (город)">
-      <input id="toCityInput" placeholder="Куда (город)">
-
-      <textarea id="uinfo" rows="5" placeholder="Информация"></textarea>
-
-      <p id="status" style="color: green;"></p>
-
-      <button onclick="saveUser()">Сохранить</button>
-    </div>
+  <div id="admin">
+    <h2>Админ-панель</h2>
+    <input id="uid" placeholder="ID (например: Tuman)">
+    <input id="uname" placeholder="ФИО">
+    <input type="datetime-local" id="endInput">
+    <input id="ufrom" placeholder="Откуда (город)">
+    <input id="uto" placeholder="Куда (город)">
+    <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
+    <button onclick="saveUser()">Сохранить</button>
+    <p id="status" style="color:green"></p>
   </div>
-
-  <div id="map"></div>
-
 </div>
 
+<div id="map"></div>
 </body>
 </html>
