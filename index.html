@@ -27,7 +27,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// ===== ПАРАМЕТРЫ И АДМИН =====
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 const isAdminParam = params.get("admin") === "true";
@@ -36,7 +35,7 @@ const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
 
-// ===== ПЕРЕМЕННЫЕ КАРТЫ =====
+// ===== КАРТА И АНИМАЦИЯ =====
 let map, routing, carMarker;
 let routeCoords = [];
 let carIndex = 0;
@@ -78,7 +77,6 @@ window.onload = () => {
   setInterval(updateTimer, 1000);
 };
 
-// ===== ТАЙМЕР =====
 function updateTimer() {
   if (!endTime) return;
   const diff = Math.max(0, endTime - new Date());
@@ -90,15 +88,15 @@ function updateTimer() {
     `${h}ч ${m}м ${s}с`;
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ =====
+// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ (БЕЗ УКРАИНСКОГО ФЛАГА) =====
 function initMap() {
   map = L.map("map").setView([48.0196, 66.9237], 6); // Казахстан
 
-  // Бесплатные нейтральные плитки (без украинской символики)
+  // ✅ НОВАЯ КАРТА — Esri (чистая, нейтральная, без флага)
   L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
     {
-      attribution: "© OpenStreetMap contributors, © CARTO"
+      attribution: "Esri"
     }
   ).addTo(map);
 
@@ -127,7 +125,7 @@ function buildRoute(fromCity, toCity) {
     lineOptions: {
       styles: [{ color: "#007bff", weight: 5 }]
     },
-    // ✅ ВАЖНО — МЕНЯЕМ СЕРВЕР (БЕЗ ДЕМО OSRM)
+    // стабильный бесплатный сервер маршрутизации
     router: L.Routing.osrmv1({
       serviceUrl: "https://routing.openstreetmap.de/routed-car/route/v1"
     })
@@ -152,18 +150,12 @@ function buildRoute(fromCity, toCity) {
     routing.on("routesfound", function (e) {
       const route = e.routes[0];
 
-      // ✅ Берём точки маршрута в правильном формате
       routeCoords = route.coordinates.map(c => [c.lat, c.lng]);
 
       carIndex = 0;
-
-      // Ставим машину в начало
       carMarker.setLatLng(routeCoords[0]);
-
-      // Подгоняем карту под маршрут
       map.fitBounds(route.getBounds());
 
-      // Запускаем движение
       startCar();
     });
   });
@@ -183,7 +175,7 @@ function startCar() {
     carMarker.setLatLng([lat, lng]);
 
     carIndex++;
-  }, 500); // скорость движения (можешь поменять)
+  }, 500);
 }
 
 // ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
@@ -231,7 +223,6 @@ body { margin: 0; font-family: Arial; }
   height: 100vh;
 }
 
-/* Левая панель — инфо */
 #panel {
   width: 40%;
   padding: 20px;
@@ -239,13 +230,11 @@ body { margin: 0; font-family: Arial; }
   overflow-y: auto;
 }
 
-/* Правая часть — карта */
 #map {
   width: 60%;
   height: 100vh;
 }
 
-/* Карточка */
 .card {
   background: white;
   padding: 20px;
@@ -264,7 +253,7 @@ body { margin: 0; font-family: Arial; }
     <div class="card">
       <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-      <h3>Получатель:</h3>
+      <h3>ФИО:</h3>
       <p id="fio">Загрузка…</p>
 
       <h3>Примерное время прибытия:</h3>
@@ -300,4 +289,3 @@ body { margin: 0; font-family: Arial; }
 
 </body>
 </html>
-
