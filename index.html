@@ -119,7 +119,7 @@ function initMap() {
   carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 }
 
-// ===== МАРШРУТ ПО ДОРОГАМ (ПРАВИЛЬНО) =====
+// ===== МАРШРУТ ТОЛЬКО ПО ДОРОГАМ (БЕЗ ПРЯМОЙ ЛИНИИ) =====
 function buildRouteOnRoads(from, to) {
   if (routingControl) {
     map.removeControl(routingControl);
@@ -147,13 +147,16 @@ function buildRouteOnRoads(from, to) {
     const route = e.routes[0];
     routePoints = [];
 
-    // ВАЖНО: берем ТОЧКИ именно с дорожного маршрута
     route.coordinates.forEach(coord => {
       routePoints.push([coord.lat, coord.lng]);
     });
 
     carMarker.setLatLng(routePoints[0]);
     map.fitBounds(route.getBounds());
+  });
+
+  routingControl.on("routingerror", function() {
+    alert("Ошибка маршрута — проверь названия городов (пиши крупные города).");
   });
 }
 
