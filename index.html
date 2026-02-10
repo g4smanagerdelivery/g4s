@@ -27,6 +27,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// ===== ПАРАМЕТРЫ И АДМИН =====
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 const isAdminParam = params.get("admin") === "true";
@@ -35,7 +36,9 @@ const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
 
-let map, routing, carMarker, routeCoords = [];
+// ===== ПЕРЕМЕННЫЕ КАРТЫ =====
+let map, routing, carMarker;
+let routeCoords = [];
 let carIndex = 0;
 let carInterval = null;
 
@@ -52,6 +55,7 @@ window.onload = () => {
 
   if (userId) {
     const ref = doc(db, "investors", userId);
+
     onSnapshot(ref, (snap) => {
       if (!snap.exists()) {
         document.getElementById("fio").textContent = "Данные не найдены";
@@ -74,6 +78,7 @@ window.onload = () => {
   setInterval(updateTimer, 1000);
 };
 
+// ===== ТАЙМЕР =====
 function updateTimer() {
   if (!endTime) return;
   const diff = Math.max(0, endTime - new Date());
@@ -85,10 +90,11 @@ function updateTimer() {
     `${h}ч ${m}м ${s}с`;
 }
 
+// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ =====
 function initMap() {
   map = L.map("map").setView([48.0196, 66.9237], 6); // Казахстан
 
-  // ✅ БЕСПЛАТНЫЕ ПЛИТКИ (НЕ УКРАИНСКИЕ)
+  // Бесплатные нейтральные плитки (без украинской символики)
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     {
@@ -105,22 +111,29 @@ function initMap() {
   carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 }
 
+// ===== ПОСТРОЕНИЕ МАРШРУТА =====
 function buildRoute(fromCity, toCity) {
-  if (routing) map.removeControl(routing);
+  if (routing) {
+    map.removeControl(routing);
+  }
 
   routing = L.Routing.control({
     waypoints: [
-      L.latLng(0, 0), // временно
+      L.latLng(0, 0),
       L.latLng(0, 0)
     ],
     routeWhileDragging: false,
-    createMarker: () => null
+    createMarker: () => null,
+    lineOptions: {
+      styles: [{ color: "#007bff", weight: 5 }]
+    }
   }).addTo(map);
 
-  // Геокодируем города через бесплатный сервис Nominatim
   Promise.all([
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fromCity + ", Kazakhstan")}`).then(r => r.json()),
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(toCity + ", Kazakhstan")}`).then(r => r.json())
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fromCity + ", Kazakhstan")}`)
+      .then(r => r.json()),
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(toCity + ", Kazakhstan")}`)
+      .then(r => r.json())
   ]).then(([fromData, toData]) => {
     if (!fromData[0] || !toData[0]) {
       alert("Не удалось найти один из городов на карте");
@@ -132,19 +145,27 @@ function buildRoute(fromCity, toCity) {
 
     routing.setWaypoints([from, to]);
 
-    routing.on("routesfound", function(e) {
+    routing.on("routesfound", function (e) {
       const route = e.routes[0];
-      routeCoords = route.coordinates;
+
+      // ✅ ПРАВИЛЬНО СОБИРАЕМ ТОЧКИ МАРШРУТА
+      routeCoords = route.coordinates.map(c => [c.lat, c.lng]);
 
       carIndex = 0;
+
+      // Ставим машину в начало
       carMarker.setLatLng(routeCoords[0]);
+
+      // Подгоняем карту под маршрут
       map.fitBounds(route.getBounds());
 
+      // Запускаем движение
       startCar();
     });
   });
 }
 
+// ===== АНИМАЦИЯ МАШИНЫ =====
 function startCar() {
   if (carInterval) clearInterval(carInterval);
 
@@ -154,9 +175,11 @@ function startCar() {
       return;
     }
 
-    carMarker.setLatLng(routeCoords[carIndex]);
+    const [lat, lng] = routeCoords[carIndex];
+    carMarker.setLatLng([lat, lng]);
+
     carIndex++;
-  }, 500); // скорость движения
+  }, 500); // скорость движения (можешь поменять)
 }
 
 // ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
@@ -273,4 +296,3 @@ body { margin: 0; font-family: Arial; }
 
 </body>
 </html>
-
