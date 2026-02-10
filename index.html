@@ -126,7 +126,11 @@ function buildRoute(fromCity, toCity) {
     createMarker: () => null,
     lineOptions: {
       styles: [{ color: "#007bff", weight: 5 }]
-    }
+    },
+    // ✅ ВАЖНО — МЕНЯЕМ СЕРВЕР (БЕЗ ДЕМО OSRM)
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://routing.openstreetmap.de/routed-car/route/v1"
+    })
   }).addTo(map);
 
   Promise.all([
@@ -148,7 +152,7 @@ function buildRoute(fromCity, toCity) {
     routing.on("routesfound", function (e) {
       const route = e.routes[0];
 
-      // ✅ ПРАВИЛЬНО СОБИРАЕМ ТОЧКИ МАРШРУТА
+      // ✅ Берём точки маршрута в правильном формате
       routeCoords = route.coordinates.map(c => [c.lat, c.lng]);
 
       carIndex = 0;
@@ -296,3 +300,4 @@ body { margin: 0; font-family: Arial; }
 
 </body>
 </html>
+
