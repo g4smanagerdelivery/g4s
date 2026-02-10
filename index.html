@@ -4,10 +4,8 @@
 <meta charset="UTF-8">
 <title>G4S Инкассационная доставка</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
 <script type="module">
@@ -16,6 +14,7 @@ import {
   getFirestore, doc, setDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
+// ===== FIREBASE =====
 const firebaseConfig = {
   apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
   authDomain: "auction-top7.firebaseapp.com",
@@ -28,15 +27,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const CITY_COORDS = {
-  "астана": [51.1605, 71.4704],
-  "караганда": [49.8028, 73.0877],
-  "алматы": [43.2220, 76.8512],
-  "шымкент": [42.3417, 69.5901],
-  "костанай": [53.2140, 63.6246],
-  "актау": [43.6500, 51.2000]
-};
-
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 const isAdminParam = params.get("admin") === "true";
@@ -44,11 +34,10 @@ const isAdminParam = params.get("admin") === "true";
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
-let startTime = null;
-let routeCoords = [];
-let carMarker = null;
-let map = null;
-let routeLine = null;
+
+let map, routing, carMarker, routeCoords = [];
+let carIndex = 0;
+let carInterval = null;
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -57,121 +46,120 @@ if (isAdminParam) {
 }
 
 window.onload = () => {
-  if (isAdmin) admin.style.display = "block";
+  if (isAdmin) document.getElementById("admin").style.display = "block";
 
-  map = L.map("map").setView([48.0196, 66.9237], 5);
+  initMap();
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 18
-  }).addTo(map);
+  if (userId) {
+    const ref = doc(db, "investors", userId);
+    onSnapshot(ref, (snap) => {
+      if (!snap.exists()) {
+        document.getElementById("fio").textContent = "Данные не найдены";
+        return;
+      }
 
-  // ===== НОРМАЛЬНАЯ ИКОНКА МАШИНЫ =====
+      const d = snap.data();
+      endTime = new Date(d.endTime);
+
+      document.getElementById("fio").textContent = d.name;
+      document.getElementById("fromCity").textContent = d.fromCity;
+      document.getElementById("toCity").textContent = d.toCity;
+      document.getElementById("infoBox").innerHTML =
+        (d.info || "").replace(/\n/g, "<br>");
+
+      buildRoute(d.fromCity, d.toCity);
+    });
+  }
+
+  setInterval(updateTimer, 1000);
+};
+
+function updateTimer() {
+  if (!endTime) return;
+  const diff = Math.max(0, endTime - new Date());
+  const h = Math.floor(diff / 36e5);
+  const m = Math.floor(diff % 36e5 / 6e4);
+  const s = Math.floor(diff % 6e4 / 1000);
+
+  document.getElementById("time").textContent =
+    `${h}ч ${m}м ${s}с`;
+}
+
+function initMap() {
+  map = L.map("map").setView([48.0196, 66.9237], 6); // Казахстан
+
+  // ✅ БЕСПЛАТНЫЕ ПЛИТКИ (НЕ УКРАИНСКИЕ)
+  L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    {
+      attribution: "© OpenStreetMap contributors, © CARTO"
+    }
+  ).addTo(map);
+
+  // Иконка машинки
   const carIcon = L.icon({
     iconUrl: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
     iconSize: [40, 40]
   });
 
-  carMarker = L.marker([48.0196, 66.9237], { icon: carIcon }).addTo(map);
+  carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
+}
 
-  const infoBox = document.getElementById("info-box");
+function buildRoute(fromCity, toCity) {
+  if (routing) map.removeControl(routing);
 
-  if (!userId) {
-    infoBox.innerHTML = "<h2>Нет данных. Используйте ссылку с ?user=ID</h2>";
-    return;
-  }
+  routing = L.Routing.control({
+    waypoints: [
+      L.latLng(0, 0), // временно
+      L.latLng(0, 0)
+    ],
+    routeWhileDragging: false,
+    createMarker: () => null
+  }).addTo(map);
 
-  const ref = doc(db, "investors", userId);
-
-  onSnapshot(ref, async (snap) => {
-    if (!snap.exists()) {
-      infoBox.innerHTML = "<h2>Данные не найдены</h2>";
+  // Геокодируем города через бесплатный сервис Nominatim
+  Promise.all([
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fromCity + ", Kazakhstan")}`).then(r => r.json()),
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(toCity + ", Kazakhstan")}`).then(r => r.json())
+  ]).then(([fromData, toData]) => {
+    if (!fromData[0] || !toData[0]) {
+      alert("Не удалось найти один из городов на карте");
       return;
     }
 
-    const d = snap.data();
-    endTime = new Date(d.endTime);
-    startTime = new Date(endTime.getTime() - 3 * 60 * 60 * 1000);
+    const from = L.latLng(fromData[0].lat, fromData[0].lon);
+    const to = L.latLng(toData[0].lat, toData[0].lon);
 
-    const from = (d.fromCity || "").toLowerCase();
-    const to = (d.toCity || "").toLowerCase();
+    routing.setWaypoints([from, to]);
 
-    const startCoords = CITY_COORDS[from] || [48.0196, 66.9237];
-    const endCoords = CITY_COORDS[to] || [48.0196, 66.9237];
+    routing.on("routesfound", function(e) {
+      const route = e.routes[0];
+      routeCoords = route.coordinates;
 
-    if (routeLine) map.removeLayer(routeLine);
+      carIndex = 0;
+      carMarker.setLatLng(routeCoords[0]);
+      map.fitBounds(route.getBounds());
 
-    const router = L.Routing.osrmv1();
-
-    router.route(
-      [
-        L.latLng(startCoords[0], startCoords[1]),
-        L.latLng(endCoords[0], endCoords[1])
-      ],
-      (err, res) => {
-        if (err) {
-          console.error("Ошибка маршрута:", err);
-          return;
-        }
-
-        routeCoords = res.routes[0].coordinates.map(c => [c.lat, c.lng]);
-
-        routeLine = L.polyline(routeCoords, {
-          color: "blue",
-          weight: 4
-        }).addTo(map);
-
-        map.fitBounds(routeLine.getBounds());
-      }
-    );
-
-    infoBox.innerHTML = `
-      <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
-
-      <h3>ФИО:</h3>
-      <p class="fio">${d.name}</p>
-
-      <h3>Примерное время прибытия:</h3>
-      <p id="time" class="timer">--:--:--</p>
-
-      <h3>Маршрут:</h3>
-      <p><b>Откуда:</b> ${d.fromCity}</p>
-      <p><b>Куда:</b> ${d.toCity}</p>
-
-      <h3>Информация о доставке:</h3>
-      <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
-    `;
+      startCar();
+    });
   });
-
-  setInterval(updateTimerAndCar, 1000);
-};
-
-function updateTimerAndCar() {
-  if (!endTime || routeCoords.length === 0) return;
-
-  const now = new Date();
-  const total = endTime - startTime;
-  const passed = now - startTime;
-  const progress = Math.min(1, Math.max(0, passed / total));
-
-  const diff = Math.max(0, endTime - now);
-  const h = Math.floor(diff / 36e5);
-  const m = Math.floor(diff % 36e5 / 6e4);
-  const s = Math.floor(diff % 6e4 / 1000);
-
-  const timeEl = document.getElementById("time");
-  if (timeEl) {
-    timeEl.textContent = `${h}ч ${m}м ${s}с`;
-    timeEl.style.color = h < 1 ? "red" : "black";
-  }
-
-  const index = Math.floor(progress * (routeCoords.length - 1));
-  const pos = routeCoords[index];
-
-  if (pos) {
-    carMarker.setLatLng(pos);
-  }
 }
 
+function startCar() {
+  if (carInterval) clearInterval(carInterval);
+
+  carInterval = setInterval(() => {
+    if (carIndex >= routeCoords.length) {
+      clearInterval(carInterval);
+      return;
+    }
+
+    carMarker.setLatLng(routeCoords[carIndex]);
+    carIndex++;
+  }, 500); // скорость движения
+}
+
+// ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
 window.saveUser = async () => {
   try {
     const id = uid.value.trim();
@@ -182,16 +170,16 @@ window.saveUser = async () => {
     const toCity = toCityInput.value.trim();
 
     if (!id || !name || !t || !fromCity || !toCity) {
-      alert("Заполни все поля");
+      alert("Заполни все поля!");
       return;
     }
 
     await setDoc(doc(db, "investors", id), {
-      name: name,
+      name,
       endTime: new Date(t).toISOString(),
       info: info || "—",
-      fromCity: fromCity,
-      toCity: toCity
+      fromCity,
+      toCity
     });
 
     const link =
@@ -200,100 +188,87 @@ window.saveUser = async () => {
 
     await navigator.clipboard.writeText(link);
 
-    alert("Сохранено!\nСсылка скопирована:\n\n" + link);
-
+    alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
   } catch (err) {
-    console.error("Ошибка сохранения:", err);
+    console.error(err);
     alert("Ошибка — смотри F12 → Console");
   }
 };
 </script>
 
 <style>
-body {
-  font-family: Arial;
-  background-color: #f2f2f2;
-  margin: 0;
-  padding: 0;
+body { margin: 0; font-family: Arial; }
+
+.container {
+  display: flex;
+  height: 100vh;
 }
 
-#layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 15px;
-  max-width: 1200px;
-  margin: 20px auto;
-  padding: 10px;
+/* Левая панель — инфо */
+#panel {
+  width: 40%;
+  padding: 20px;
+  background: #f2f2f2;
+  overflow-y: auto;
 }
 
-@media (max-width: 800px) {
-  #layout {
-    grid-template-columns: 1fr;
-  }
-
-  #map {
-    height: 350px;
-  }
-}
-
+/* Правая часть — карта */
 #map {
-  height: 500px;
-  width: 100%;
-  border-radius: 12px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  width: 60%;
+  height: 100vh;
 }
 
-#info-box {
+/* Карточка */
+.card {
   background: white;
   padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  border-radius: 10px;
 }
 
-.fio {
-  font-size: 22px;
-  font-weight: bold;
-}
-
-.timer {
-  font-size: 24px;
-  font-weight: bold;
-}
-
-#admin {
-  display: none;
-  max-width: 600px;
-  margin: 20px auto;
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-}
+#admin { display: none; margin-top: 20px; }
 </style>
 </head>
 
 <body>
 
-<div id="layout">
-  <div id="info-box">
-    <h2>Загрузка…</h2>
+<div class="container">
+
+  <div id="panel">
+    <div class="card">
+      <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+
+      <h3>ФИО:</h3>
+      <p id="fio">Загрузка…</p>
+
+      <h3>Примерное время прибытия:</h3>
+      <p id="time">--:--:--</p>
+
+      <h3>Маршрут:</h3>
+      <p><b>Откуда:</b> <span id="fromCity"></span></p>
+      <p><b>Куда:</b> <span id="toCity"></span></p>
+
+      <h3>Информация:</h3>
+      <div id="infoBox"></div>
+    </div>
+
+    <div id="admin">
+      <h2>Админ-панель</h2>
+
+      <input id="uid" placeholder="ID (например: Tuman)">
+      <input id="uname" placeholder="ФИО">
+      <input type="datetime-local" id="endInput">
+
+      <input id="fromCityInput" placeholder="Откуда (город)">
+      <input id="toCityInput" placeholder="Куда (город)">
+
+      <textarea id="uinfo" rows="5" placeholder="Информация"></textarea>
+
+      <button onclick="saveUser()">Сохранить</button>
+    </div>
   </div>
 
   <div id="map"></div>
-</div>
 
-<div id="admin">
-  <h2>Админ-панель</h2>
-
-  <input id="uid" placeholder="ID (например: Tuman)">
-  <input id="uname" placeholder="ФИО">
-  <input type="datetime-local" id="endInput">
-
-  <input id="fromCityInput" placeholder="Откуда (город)">
-  <input id="toCityInput" placeholder="Куда (город)">
-
-  <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
-
-  <button onclick="saveUser()">Сохранить</button>
 </div>
 
 </body>
