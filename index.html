@@ -5,7 +5,10 @@
 <title>G4S Доставка</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
@@ -33,8 +36,8 @@ const isAdminParam = params.get("admin") === "true";
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 
-// ===== КАРТА И ДВИЖЕНИЕ =====
-let map, carMarker, routeLine;
+// ===== КАРТА / МАРШРУТ / МАШИНА =====
+let map, carMarker, routingControl;
 let routePoints = [];
 let endTime = null;
 let totalDurationMs = 0;
@@ -69,7 +72,7 @@ window.onload = () => {
       document.getElementById("infoBox").innerHTML =
         (d.info || "").replace(/\n/g, "<br>");
 
-      buildRouteFromCoords(
+      buildRouteOnRoads(
         [d.fromLat, d.fromLng],
         [d.toLat, d.toLng]
       );
@@ -99,7 +102,7 @@ function updateTimerAndCar() {
   carMarker.setLatLng(routePoints[index]);
 }
 
-// ===== КАРТА =====
+// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ =====
 function initMap() {
   map = L.map("map").setView([48.0196, 66.9237], 6);
 
@@ -116,32 +119,41 @@ function initMap() {
   carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 }
 
-// ===== СТРОИМ МАРШРУТ БЕЗ ГЕОКОДИНГА (ВАЖНО!) =====
-function buildRouteFromCoords(from, to) {
-  if (routeLine) map.removeLayer(routeLine);
-
-  const distanceKm = map.distance(
-    L.latLng(from[0], from[1]),
-    L.latLng(to[0], to[1])
-  ) / 1000;
-
-  const steps = Math.max(100, Math.round(distanceKm * 20));
-
-  routePoints = [];
-
-  for (let i = 0; i <= steps; i++) {
-    const lat = from[0] + (to[0] - from[0]) * (i / steps);
-    const lng = from[1] + (to[1] - from[1]) * (i / steps);
-    routePoints.push([lat, lng]);
+// ===== МАРШРУТ ПО ДОРОГАМ (БЕСПЛАТНО И БЕЗ КЛЮЧЕЙ) =====
+function buildRouteOnRoads(from, to) {
+  if (routingControl) {
+    map.removeControl(routingControl);
   }
 
-  routeLine = L.polyline(routePoints, {
-    color: "#007bff",
-    weight: 5
+  routingControl = L.Routing.control({
+    waypoints: [
+      L.latLng(from[0], from[1]),
+      L.latLng(to[0], to[1])
+    ],
+    lineOptions: {
+      styles: [{ color: "#007bff", weight: 5 }]
+    },
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true,
+    show: false,
+
+    // ВАЖНО: стабильный бесплатный сервер с CORS
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://routing.openstreetmap.de/routed-car/route/v1"
+    })
   }).addTo(map);
 
-  map.fitBounds(routeLine.getBounds());
-  carMarker.setLatLng(routePoints[0]);
+  routingControl.on("routesfound", function(e) {
+    const route = e.routes[0];
+    routePoints = [];
+
+    route.coordinates.forEach(coord => {
+      routePoints.push([coord.lat, coord.lng]);
+    });
+
+    carMarker.setLatLng(routePoints[0]);
+  });
 }
 
 // ===== ГЕОКОДИНГ ТОЛЬКО В АДМИНКЕ =====
