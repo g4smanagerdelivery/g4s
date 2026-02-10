@@ -32,13 +32,12 @@ const isAdminParam = params.get("admin") === "true";
 
 const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
-let endTime = null;
 
 // ===== КАРТА И МАШИНА =====
 let map, carMarker, routeLine;
 let routePoints = [];
-let carIndex = 0;
-let carInterval = null;
+let endTime = null;
+let totalDurationMs = 0; // сколько изначально было времени
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -63,6 +62,9 @@ window.onload = () => {
       const d = snap.data();
       endTime = new Date(d.endTime);
 
+      // Запоминаем, сколько времени было изначально
+      totalDurationMs = Math.max(1000, endTime - new Date());
+
       document.getElementById("fio").textContent = d.name;
       document.getElementById("fromCity").textContent = d.fromCity;
       document.getElementById("toCity").textContent = d.toCity;
@@ -73,21 +75,31 @@ window.onload = () => {
     });
   }
 
-  setInterval(updateTimer, 1000);
+  setInterval(updateTimerAndCar, 1000);
 };
 
-function updateTimer() {
-  if (!endTime) return;
-  const diff = Math.max(0, endTime - new Date());
+function updateTimerAndCar() {
+  if (!endTime || routePoints.length === 0) return;
+
+  const now = new Date();
+  let diff = Math.max(0, endTime - now);
+
   const h = Math.floor(diff / 36e5);
   const m = Math.floor(diff % 36e5 / 6e4);
   const s = Math.floor(diff % 6e4 / 1000);
 
   document.getElementById("time").textContent =
     `${h}ч ${m}м ${s}с`;
+
+  // ===== ДВИЖЕНИЕ МАШИНЫ ПО ТАЙМЕРУ =====
+  const passed = totalDurationMs - diff; // сколько времени прошло
+  const progress = Math.min(1, passed / totalDurationMs); // от 0 до 1
+
+  const index = Math.floor(progress * (routePoints.length - 1));
+  carMarker.setLatLng(routePoints[index]);
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ (БЕЗ ФЛАГА) =====
+// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ =====
 function initMap() {
   map = L.map("map").setView([48.0196, 66.9237], 6);
 
@@ -128,14 +140,12 @@ async function buildRoute(fromCity, toCity) {
 
     if (routeLine) map.removeLayer(routeLine);
 
-    // считаем расстояние
     const distanceKm = map.distance(
       L.latLng(from[0], from[1]),
       L.latLng(to[0], to[1])
     ) / 1000;
 
-    // 10 точек на каждый километр, но минимум 50
-    const steps = Math.max(50, Math.round(distanceKm * 10));
+    const steps = Math.max(100, Math.round(distanceKm * 20)); // больше точек = плавнее
 
     routePoints = [];
 
@@ -151,33 +161,11 @@ async function buildRoute(fromCity, toCity) {
     }).addTo(map);
 
     map.fitBounds(routeLine.getBounds());
-
-    carIndex = 0;
     carMarker.setLatLng(routePoints[0]);
-
-    startCar();
   } catch (e) {
     console.error(e);
     alert("Ошибка маршрута — проверь названия городов.");
   }
-}
-
-// ===== АНИМАЦИЯ МАШИНЫ (НОРМАЛЬНАЯ СКОРОСТЬ) =====
-function startCar() {
-  if (carInterval) clearInterval(carInterval);
-
-  const totalTimeMs = 60 * 1000; // ВСЕГДА ~60 секунд на маршрут
-  const stepTime = totalTimeMs / routePoints.length;
-
-  carInterval = setInterval(() => {
-    if (carIndex >= routePoints.length) {
-      clearInterval(carInterval);
-      return;
-    }
-
-    carMarker.setLatLng(routePoints[carIndex]);
-    carIndex++;
-  }, stepTime);
 }
 
 // ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
@@ -255,7 +243,7 @@ body { margin: 0; font-family: Arial; }
     <div class="card">
       <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-      <h3>ФИО:</h3>
+      <h3>Получатель:</h3>
       <p id="fio">Загрузка…</p>
 
       <h3>Примерное время прибытия:</h3>
