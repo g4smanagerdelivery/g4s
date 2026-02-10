@@ -37,7 +37,7 @@ let isAdmin = false;
 let map, carMarker, routeLine;
 let routePoints = [];
 let endTime = null;
-let totalDurationMs = 0; // сколько изначально было времени
+let totalDurationMs = 0;
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -61,8 +61,6 @@ window.onload = () => {
 
       const d = snap.data();
       endTime = new Date(d.endTime);
-
-      // Запоминаем, сколько времени было изначально
       totalDurationMs = Math.max(1000, endTime - new Date());
 
       document.getElementById("fio").textContent = d.name;
@@ -91,11 +89,10 @@ function updateTimerAndCar() {
   document.getElementById("time").textContent =
     `${h}ч ${m}м ${s}с`;
 
-  // ===== ДВИЖЕНИЕ МАШИНЫ ПО ТАЙМЕРУ =====
-  const passed = totalDurationMs - diff; // сколько времени прошло
-  const progress = Math.min(1, passed / totalDurationMs); // от 0 до 1
-
+  const passed = totalDurationMs - diff;
+  const progress = Math.min(1, passed / totalDurationMs);
   const index = Math.floor(progress * (routePoints.length - 1));
+
   carMarker.setLatLng(routePoints[index]);
 }
 
@@ -116,20 +113,46 @@ function initMap() {
   carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 }
 
-// ===== ГЕОКОДИНГ (БЕЗ CORS-ОШИБОК) =====
+// ===== НАДЁЖНЫЙ ГЕОКОДИНГ (2 сервиса + запасной вариант) =====
 async function geocodeCity(city) {
-  const url =
-    "https://geocode.maps.co/search?q=" +
-    encodeURIComponent(city + ", Kazakhstan");
+  // 1) Пробуем maps.co
+  try {
+    const url =
+      "https://geocode.maps.co/search?q=" +
+      encodeURIComponent(city + ", Kazakhstan");
 
-  const res = await fetch(url);
-  const data = await res.json();
+    const res = await fetch(url);
+    const data = await res.json();
 
-  if (!data || data.length === 0) {
-    throw new Error("Город не найден: " + city);
+    if (data && data.length > 0) {
+      return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+    }
+  } catch (e) {
+    console.warn("maps.co не сработал, пробуем запасной вариант...");
   }
 
-  return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  // 2) Запасной сервис (Photon)
+  try {
+    const url =
+      "https://photon.komoot.io/api/?q=" +
+      encodeURIComponent(city + ", Kazakhstan");
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.features && data.features.length > 0) {
+      const [lng, lat] = data.features[0].geometry.coordinates;
+      return [lat, lng];
+    }
+  } catch (e) {
+    console.warn("Photon тоже не сработал...");
+  }
+
+  // 3) Если всё плохо — даём примерные координаты Казахстана
+  console.error("Геокодинг не удался для:", city);
+  alert("Не удалось точно найти город: " + city + "\nСтрою маршрут приблизительно.");
+
+  return [48.0196, 66.9237]; // центр Казахстана (запас)
 }
 
 // ===== СТРОИМ МАРШРУТ =====
@@ -145,7 +168,7 @@ async function buildRoute(fromCity, toCity) {
       L.latLng(to[0], to[1])
     ) / 1000;
 
-    const steps = Math.max(100, Math.round(distanceKm * 20)); // больше точек = плавнее
+    const steps = Math.max(100, Math.round(distanceKm * 20));
 
     routePoints = [];
 
@@ -164,7 +187,7 @@ async function buildRoute(fromCity, toCity) {
     carMarker.setLatLng(routePoints[0]);
   } catch (e) {
     console.error(e);
-    alert("Ошибка маршрута — проверь названия городов.");
+    alert("Ошибка маршрута — но карта всё равно загрузилась.");
   }
 }
 
