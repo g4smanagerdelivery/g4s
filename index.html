@@ -6,7 +6,6 @@
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
@@ -35,9 +34,9 @@ const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 let endTime = null;
 
-// ===== КАРТА И АНИМАЦИЯ =====
-let map, routing, carMarker;
-let routeCoords = [];
+// ===== КАРТА И МАШИНА =====
+let map, carMarker, routeLine;
+let routePoints = [];
 let carIndex = 0;
 let carInterval = null;
 
@@ -55,7 +54,7 @@ window.onload = () => {
   if (userId) {
     const ref = doc(db, "investors", userId);
 
-    onSnapshot(ref, (snap) => {
+    onSnapshot(ref, async (snap) => {
       if (!snap.exists()) {
         document.getElementById("fio").textContent = "Данные не найдены";
         return;
@@ -70,7 +69,7 @@ window.onload = () => {
       document.getElementById("infoBox").innerHTML =
         (d.info || "").replace(/\n/g, "<br>");
 
-      buildRoute(d.fromCity, d.toCity);
+      await buildRoute(d.fromCity, d.toCity);
     });
   }
 
@@ -88,19 +87,15 @@ function updateTimer() {
     `${h}ч ${m}м ${s}с`;
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ (БЕЗ УКРАИНСКОГО ФЛАГА) =====
+// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ (БЕЗ ФЛАГА) =====
 function initMap() {
-  map = L.map("map").setView([48.0196, 66.9237], 6); // Казахстан
+  map = L.map("map").setView([48.0196, 66.9237], 6);
 
-  // ✅ НОВАЯ КАРТА — Esri (чистая, нейтральная, без флага)
   L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-    {
-      attribution: "Esri"
-    }
+    { attribution: "Esri" }
   ).addTo(map);
 
-  // Иконка машинки
   const carIcon = L.icon({
     iconUrl: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
     iconSize: [40, 40]
@@ -109,56 +104,56 @@ function initMap() {
   carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 }
 
-// ===== ПОСТРОЕНИЕ МАРШРУТА =====
-function buildRoute(fromCity, toCity) {
-  if (routing) {
-    map.removeControl(routing);
-  }
+// ===== ПОЛУЧАЕМ КООРДИНАТЫ ГОРОДОВ (НАДЁЖНО) =====
+async function geocodeCity(city) {
+  const url =
+    "https://nominatim.openstreetmap.org/search?format=json&q=" +
+    encodeURIComponent(city + ", Kazakhstan");
 
-  routing = L.Routing.control({
-    waypoints: [
-      L.latLng(0, 0),
-      L.latLng(0, 0)
-    ],
-    routeWhileDragging: false,
-    createMarker: () => null,
-    lineOptions: {
-      styles: [{ color: "#007bff", weight: 5 }]
-    },
-    // стабильный бесплатный сервер маршрутизации
-    router: L.Routing.osrmv1({
-      serviceUrl: "https://routing.openstreetmap.de/routed-car/route/v1"
-    })
-  }).addTo(map);
+  const res = await fetch(url);
+  const data = await res.json();
 
-  Promise.all([
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fromCity + ", Kazakhstan")}`)
-      .then(r => r.json()),
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(toCity + ", Kazakhstan")}`)
-      .then(r => r.json())
-  ]).then(([fromData, toData]) => {
-    if (!fromData[0] || !toData[0]) {
-      alert("Не удалось найти один из городов на карте");
-      return;
+  if (!data || data.length === 0) throw new Error("Город не найден: " + city);
+
+  return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+}
+
+// ===== СТРОИМ МАРШРУТ И ЗАПУСКАЕМ МАШИНУ =====
+async function buildRoute(fromCity, toCity) {
+  try {
+    const from = await geocodeCity(fromCity);
+    const to = await geocodeCity(toCity);
+
+    // Удаляем старый маршрут
+    if (routeLine) map.removeLayer(routeLine);
+
+    // Делаем плавную линию между точками
+    routePoints = [];
+
+    const steps = 50; // сколько точек анимации
+    for (let i = 0; i <= steps; i++) {
+      const lat =
+        from[0] + (to[0] - from[0]) * (i / steps);
+      const lng =
+        from[1] + (to[1] - from[1]) * (i / steps);
+      routePoints.push([lat, lng]);
     }
 
-    const from = L.latLng(fromData[0].lat, fromData[0].lon);
-    const to = L.latLng(toData[0].lat, toData[0].lon);
+    routeLine = L.polyline(routePoints, {
+      color: "#007bff",
+      weight: 5
+    }).addTo(map);
 
-    routing.setWaypoints([from, to]);
+    map.fitBounds(routeLine.getBounds());
 
-    routing.on("routesfound", function (e) {
-      const route = e.routes[0];
+    carIndex = 0;
+    carMarker.setLatLng(routePoints[0]);
 
-      routeCoords = route.coordinates.map(c => [c.lat, c.lng]);
-
-      carIndex = 0;
-      carMarker.setLatLng(routeCoords[0]);
-      map.fitBounds(route.getBounds());
-
-      startCar();
-    });
-  });
+    startCar();
+  } catch (e) {
+    console.error(e);
+    alert("Ошибка маршрута — но карта всё равно загрузилась.");
+  }
 }
 
 // ===== АНИМАЦИЯ МАШИНЫ =====
@@ -166,16 +161,14 @@ function startCar() {
   if (carInterval) clearInterval(carInterval);
 
   carInterval = setInterval(() => {
-    if (carIndex >= routeCoords.length) {
+    if (carIndex >= routePoints.length) {
       clearInterval(carInterval);
       return;
     }
 
-    const [lat, lng] = routeCoords[carIndex];
-    carMarker.setLatLng([lat, lng]);
-
+    carMarker.setLatLng(routePoints[carIndex]);
     carIndex++;
-  }, 500);
+  }, 300);
 }
 
 // ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
