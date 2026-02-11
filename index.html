@@ -11,6 +11,17 @@
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
 <style>
+  .cancel-blink {
+  color: red;
+  font-weight: bold;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
+}
 body { margin:0; font-family: Arial; background:#f2f2f2; }
 #container { display:flex; height:100vh; }
 
@@ -62,17 +73,7 @@ body { margin:0; font-family: Arial; background:#f2f2f2; }
 .leaflet-routing-container {
   display: none !important;
 }
-  .cancel-blink {
-  color: red;
-  font-weight: bold;
-  animation: blink 1s infinite;
-}
-
-@keyframes blink {
-  0% { opacity: 1; }
-  50% { opacity: 0; }
-  100% { opacity: 1; }
-}
+  
 </style>
 </head>
 
@@ -368,5 +369,6 @@ window.copyLink = function() {
 
 </body>
 </html>
+
 
 
