@@ -35,6 +35,7 @@ let endTime = null;
 let routeCoords = [];
 let carMarker = null;
 let routeControl = null;
+let routeProgress = 0; // <-- ВАЖНО: фикс "улёта" при зуме
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -47,9 +48,11 @@ window.onload = () => {
 
   const map = L.map("map").setView([48.0196, 66.9237], 5);
 
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-    attribution: "© OpenStreetMap, © Carto"
-  }).addTo(map);
+  // Нейтральная бесплатная карта (без флагов)
+  L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+    { attribution: "Esri" }
+  ).addTo(map);
 
   const carIcon = L.icon({
     iconUrl: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
@@ -86,7 +89,6 @@ window.onload = () => {
         </div>
       `;
 
-      // ===== ВАЖНО: клиент использует УЖЕ ГОТОВЫЕ координаты =====
       const from = [d.fromLat, d.fromLng];
       const to = [d.toLat, d.toLng];
 
@@ -107,6 +109,13 @@ window.onload = () => {
 
         if (carMarker) map.removeLayer(carMarker);
         carMarker = L.marker(routeCoords[0], { icon: carIcon }).addTo(map);
+
+        // ФИКС: возвращаем машину на место после зума/движения карты
+        map.on("zoomend moveend", () => {
+          if (!carMarker || routeCoords.length === 0) return;
+          const idx = Math.floor(routeProgress * (routeCoords.length - 1));
+          carMarker.setLatLng(routeCoords[idx]);
+        });
       });
     });
   }
@@ -131,15 +140,16 @@ function updateTimer() {
 function moveCarByTime() {
   if (!carMarker || routeCoords.length === 0 || !endTime) return;
 
-  const totalMs = 2 * 60 * 60 * 1000; // 2 часа условно
+  const totalMs = 2 * 60 * 60 * 1000; // 2 часа "виртуальный путь"
   const elapsed = Math.max(0, totalMs - (endTime - Date.now()));
-  const progress = Math.min(1, elapsed / totalMs);
 
-  const idx = Math.floor(progress * (routeCoords.length - 1));
+  routeProgress = Math.min(1, elapsed / totalMs);
+
+  const idx = Math.floor(routeProgress * (routeCoords.length - 1));
   carMarker.setLatLng(routeCoords[idx]);
 }
 
-// ======== АДМИН: ИЩЕМ КООРДИНАТЫ ТОЛЬКО У ВАС ========
+// ======== АДМИН: геокодируем города ТОЛЬКО у админа ========
 async function geocodeCity(city) {
   const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(city + ", Kazakhstan")}`;
   const r = await fetch(url);
