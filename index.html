@@ -249,9 +249,10 @@ if (userId) {
     let infoText = d.info || "—";
 
 // Если есть слово "отмена!"
+// ===== МИГАЮЩИЙ ТЕКСТ "ОТМЕНА!" =====
 if (infoText.toLowerCase().includes("отмена!")) {
   infoText = infoText.replace(/отмена!/gi, 
-    '<span style="color:red; font-weight:bold;">ОТМЕНА!</span>');
+    '<span class="cancel-blink">ОТМЕНА!</span>');
 }
 
 document.getElementById("infoText").innerHTML = infoText;
@@ -370,7 +371,3 @@ window.copyLink = function() {
 
 </body>
 </html>
-
-
-
-
