@@ -160,6 +160,7 @@ const carIcon = L.icon({
 let carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 let routeLine = null;
 let routeCoords = [];
+let animationStarted = false;
 
 // ===== ГЕОКОДИНГ ГОРОДА =====
 async function geocodeCity(city) {
@@ -195,9 +196,11 @@ if (userId) {
     document.getElementById("infoText").innerText = d.info || "—";
 
     const endTime = new Date(d.endTime);
-    const startTime = new Date(d.startTime);
+    const startTime = d.startTime?.toDate
+      ? d.startTime.toDate()
+      : new Date(d.startTime);
 
-    // Таймер + процент
+    // ===== ТАЙМЕР + ПРОЦЕНТ =====
     setInterval(() => {
       const now = new Date();
       const total = endTime - startTime;
@@ -218,7 +221,7 @@ if (userId) {
         `Пройдено: ${percent}%`;
     }, 1000);
 
-    // === СТРОИМ МАРШРУТ ТОЛЬКО ЕСЛИ ЕГО НЕТ ===
+    // ===== СТРОИМ МАРШРУТ (ТОЛЬКО 1 РАЗ) =====
     if (!routeLine) {
       const fromCoords = await geocodeCity(d.from);
       const toCoords = await geocodeCity(d.to);
@@ -246,10 +249,15 @@ if (userId) {
         }).addTo(map);
 
         map.fitBounds(routeLine.getBounds());
+
+        if (!animationStarted) {
+          animationStarted = true;
+          animateCar();
+        }
       });
     }
 
-    // === АНИМАЦИЯ МАШИНЫ ПО ЛИНИИ ===
+    // ===== АНИМАЦИЯ МАШИНЫ (ПРИВЯЗАНА К ВРЕМЕНИ) =====
     function animateCar() {
       if (!routeCoords || routeCoords.length === 0) {
         requestAnimationFrame(animateCar);
@@ -270,12 +278,10 @@ if (userId) {
 
       requestAnimationFrame(animateCar);
     }
-
-    animateCar();
   });
 }
 
-// ===== АДМИН-ПАНЕЛЬ С ПАРОЛЕМ =====
+// ===== АДМИН-ПАНЕЛЬ =====
 if (params.get("admin") === "true") {
   const p = prompt("Введите пароль администратора");
   if (p === "123456") {
