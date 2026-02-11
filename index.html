@@ -1,20 +1,22 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta charset="UTF-8">
+<title>G4S Инкассационная доставка</title>
 
-<title>Трекер доставки</title>
-
+<!-- Leaflet (карта) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Leaflet Routing Machine (маршрут по дорогам) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
 <style>
-html, body {
+body {
   margin: 0;
-  padding: 0;
-  height: 100%;
   font-family: Arial, sans-serif;
+  background: #f2f2f2;
 }
 
 #container {
@@ -22,19 +24,38 @@ html, body {
   height: 100vh;
 }
 
+/* Левая часть — информация */
 #info {
-  width: 35%;
+  width: 40%;
   padding: 20px;
   box-sizing: border-box;
-  background: #f5f5f5;
+  background: white;
+  overflow-y: auto;
 }
 
+/* Правая часть — карта */
 #map {
-  width: 65%;
-  height: 100%;
+  width: 60%;
+  height: 100vh;
 }
 
-/* Убираем панель маршрута справа */
+/* Админка */
+#admin {
+  display: none;
+  margin-top: 20px;
+  padding: 15px;
+  background: #f7f7f7;
+  border-radius: 8px;
+}
+
+#admin input, #admin textarea {
+  width: 100%;
+  margin: 5px 0;
+  padding: 8px;
+}
+
+/* Убираем лишние элементы Leaflet */
+.leaflet-control-attribution,
 .leaflet-routing-container {
   display: none !important;
 }
@@ -44,141 +65,221 @@ html, body {
 <body>
 
 <div id="container">
+
+  <!-- ЛЕВАЯ ЧАСТЬ -->
   <div id="info">
-    <h2>ИНКАССАЦИОННАЯ ДОСТАВКА</h2>
+    <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-    <p><b>Получатель:</b> <span id="clientName">—</span></p>
+    <h3>Получатель:</h3>
+    <p id="clientName">Загрузка…</p>
 
-    <p><b>Примерное время прибытия:</b><br>
-    <span id="eta">Загрузка...</span></p>
+    <h3>Примерное время прибытия:</h3>
+    <p id="eta">--:--:--</p>
 
-    <p><b>Маршрут:</b><br>
-    Откуда: <span id="fromCity">—</span><br>
-    Куда: <span id="toCity">—</span></p>
+    <h3>Маршрут:</h3>
+    <p><b>Откуда:</b> <span id="fromCity"></span></p>
+    <p><b>Куда:</b> <span id="toCity"></span></p>
 
-    <p><b>Информация:</b><br>
-    <span id="infoText">—</span></p>
+    <h3>Информация:</h3>
+    <p id="infoText"></p>
+
+    <!-- АДМИН-ПАНЕЛЬ -->
+    <div id="admin">
+      <h2>Админ-панель</h2>
+
+      <input id="uid" placeholder="ID клиента (например: Tuman)">
+      <input id="uname" placeholder="ФИО">
+      <input type="datetime-local" id="endInput">
+      <input id="fromInput" placeholder="Откуда (город)">
+      <input id="toInput" placeholder="Куда (город)">
+      <textarea id="uinfo" rows="4" placeholder="Информация о доставке"></textarea>
+
+      <button onclick="saveUser()">Сохранить</button>
+    </div>
   </div>
 
+  <!-- КАРТА -->
   <div id="map"></div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
-<script>
-// ======== КАРТА (БЕЗ + / - И БЕЗ ЛИШНЕГО) ========
+const firebaseConfig = {
+  apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
+  authDomain: "auction-top7.firebaseapp.com",
+  projectId: "auction-top7",
+  storageBucket: "auction-top7.firebasestorage.app",
+  messagingSenderId: "73096110012",
+  appId: "1:73096110012:web:8f014f6faae5d08bd455b9"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// ===== ПАРАМЕТРЫ =====
+const params = new URLSearchParams(location.search);
+const userId = decodeURIComponent(params.get("user") || "");
+const isAdmin = params.get("admin") === "true";
+
+// ===== КАРТА =====
 const map = L.map("map", {
-  zoomControl: false,      // <-- убрали +/-
+  zoomControl: false,
   attributionControl: false
 }).setView([48.0196, 66.9237], 5);
 
-// Нейтральная бесплатная карта (не украинская)
+// Нейтральная бесплатная карта (без флагов)
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
   { attribution: "Esri" }
 ).addTo(map);
 
-// ======== ИКОНКА МАШИНЫ ========
+// ===== ИКОНКА МАШИНЫ =====
 const carIcon = L.icon({
   iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
   iconSize: [40, 40],
   iconAnchor: [20, 20]
 });
 
-let carMarker = L.marker([0,0], { icon: carIcon });
+let carMarker = L.marker([0, 0], { icon: carIcon });
 
-// ======== ДАННЫЕ (ЗАМЕНИ НА СВОИ) ========
-const clientData = {
-  name: "Туман Туман",
-  from: "Astana",
-  to: "Airtam",
-  info: "Инкассационная доставка",
-  totalTimeMinutes: 238 // <-- сколько ехать всего (3ч 58м = 238 минут)
-};
-
-document.getElementById("clientName").innerText = clientData.name;
-document.getElementById("fromCity").innerText = clientData.from;
-document.getElementById("toCity").innerText = clientData.to;
-document.getElementById("infoText").innerText = clientData.info;
-
-// ======== ГЕОКОДИНГ (ищем города) ========
+// ===== УМНЫЙ ПОИСК ГОРОДА (работает для любых городов/посёлков) =====
 async function geocodeCity(city) {
-  const url =
-    "https://nominatim.openstreetmap.org/search?format=json&q=" +
-    encodeURIComponent(city + ", Kazakhstan");
+  const tries = [
+    `${city}, Kazakhstan`,
+    `${city}, KZ`,
+    city
+  ];
 
-  const res = await fetch(url);
-  const data = await res.json();
+  for (let query of tries) {
+    try {
+      const url =
+        "https://nominatim.openstreetmap.org/search?format=json&q=" +
+        encodeURIComponent(query);
 
-  if (!data || data.length === 0) {
-    throw new Error("Город не найден: " + city);
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data && data.length > 0) {
+        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+      }
+    } catch (e) {
+      console.log("Не найден:", query);
+    }
   }
 
-  return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  // Если вообще не найден — ставим центр Казахстана
+  return [48.0196, 66.9237];
 }
 
-// ======== СТРОИМ МАРШРУТ И АНИМИРУЕМ МАШИНУ ========
-async function buildRoute() {
-  const fromCoords = await geocodeCity(clientData.from);
-  const toCoords = await geocodeCity(clientData.to);
+// ===== ЗАГРУЗКА ДАННЫХ ИЗ FIREBASE =====
+if (userId) {
+  const ref = doc(db, "investors", userId);
 
-  const routeControl = L.Routing.control({
-    waypoints: [
-      L.latLng(fromCoords[0], fromCoords[1]),
-      L.latLng(toCoords[0], toCoords[1])
-    ],
-    router: L.Routing.osrmv1({
-      serviceUrl: "https://router.project-osrm.org/route/v1"
-    }),
-    addWaypoints: false,
-    draggableWaypoints: false,
-    fitSelectedRoutes: true
-  }).addTo(map);
-
-  routeControl.on("routesfound", function(e) {
-    const route = e.routes[0];
-    const coords = route.coordinates; // точки маршрута
-
-    // Добавляем машину в начало маршрута
-    carMarker.setLatLng(coords[0]);
-    carMarker.addTo(map);
-
-    // ======== АНИМАЦИЯ ПО ВРЕМЕНИ ========
-    let startTime = Date.now();
-    let totalMs = clientData.totalTimeMinutes * 60 * 1000;
-
-    function animate() {
-      let elapsed = Date.now() - startTime;
-      let progress = elapsed / totalMs;
-
-      if (progress > 1) progress = 1;
-
-      let index = Math.floor(progress * (coords.length - 1));
-      carMarker.setLatLng(coords[index]);
-
-      // Таймер для клиента
-      let remainingMs = totalMs - elapsed;
-      if (remainingMs < 0) remainingMs = 0;
-
-      let hours = Math.floor(remainingMs / 3600000);
-      let minutes = Math.floor((remainingMs % 3600000) / 60000);
-      let seconds = Math.floor((remainingMs % 60000) / 1000);
-
-      document.getElementById("eta").innerText =
-        hours + "ч " + minutes + "м " + seconds + "с";
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
+  onSnapshot(ref, async (snap) => {
+    if (!snap.exists()) {
+      alert("Клиент не найден");
+      return;
     }
 
-    animate();
+    const d = snap.data();
+
+    document.getElementById("clientName").innerText = d.name;
+    document.getElementById("fromCity").innerText = d.from;
+    document.getElementById("toCity").innerText = d.to;
+    document.getElementById("infoText").innerText = d.info || "—";
+
+    const endTime = new Date(d.endTime);
+
+    // Таймер
+    setInterval(() => {
+      const diff = Math.max(0, endTime - new Date());
+      const h = Math.floor(diff / 36e5);
+      const m = Math.floor(diff % 36e5 / 6e4);
+      const s = Math.floor(diff % 6e4 / 1000);
+
+      document.getElementById("eta").innerText =
+        `${h}ч ${m}м ${s}с`;
+    }, 1000);
+
+    // Строим маршрут по дорогам
+    const fromCoords = await geocodeCity(d.from);
+    const toCoords = await geocodeCity(d.to);
+
+    const routeControl = L.Routing.control({
+      waypoints: [
+        L.latLng(fromCoords[0], fromCoords[1]),
+        L.latLng(toCoords[0], toCoords[1])
+      ],
+      router: L.Routing.osrmv1({
+        serviceUrl: "https://router.project-osrm.org/route/v1"
+      }),
+      addWaypoints: false,
+      draggableWaypoints: false,
+      fitSelectedRoutes: true
+    }).addTo(map);
+
+    routeControl.on("routesfound", function(e) {
+      const route = e.routes[0];
+      const coords = route.coordinates;
+
+      carMarker.setLatLng(coords[0]);
+      carMarker.addTo(map);
+
+      let startTime = Date.now();
+      let totalMs = endTime - startTime;
+
+      function animate() {
+        let elapsed = Date.now() - startTime;
+        let progress = elapsed / totalMs;
+
+        if (progress > 1) progress = 1;
+
+        let index = Math.floor(progress * (coords.length - 1));
+        carMarker.setLatLng(coords[index]);
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        }
+      }
+
+      animate();
+    });
   });
 }
 
-// Запуск
-buildRoute().catch(err => alert("Ошибка маршрута: " + err.message));
+// ===== АДМИНКА =====
+if (isAdmin) {
+  document.getElementById("admin").style.display = "block";
+}
+
+window.saveUser = async function() {
+  const id = uid.value.trim();
+  const name = uname.value.trim();
+  const t = endInput.value;
+  const from = fromInput.value.trim();
+  const to = toInput.value.trim();
+  const info = uinfo.value;
+
+  if (!id || !name || !t || !from || !to) {
+    alert("Заполни все поля");
+    return;
+  }
+
+  await setDoc(doc(db, "investors", id), {
+    name,
+    from,
+    to,
+    endTime: new Date(t).toISOString(),
+    info: info || "—"
+  });
+
+  const link =
+    location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+
+  alert("Сохранено!\nСсылка для клиента:\n\n" + link);
+};
 </script>
 
 </body>
