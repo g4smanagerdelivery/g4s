@@ -171,6 +171,9 @@ let router = null;
 let lastFrom = null;
 let lastTo = null;
 
+let animateFrame = null; // для requestAnimationFrame
+let progressInterval = null; // для setInterval
+
 // ===== ГЕОКОДИНГ ГОРОДА =====
 async function geocodeCity(city) {
   const url =
@@ -200,7 +203,6 @@ async function buildRoute(from, to) {
 
   routeCoords = [];
 
-  // Если поле "откуда" пустое, берем текущую позицию машины
   let fromCoords;
   if (!from || from.trim() === "") {
     const currentPos = carMarker.getLatLng();
@@ -234,6 +236,21 @@ async function buildRoute(from, to) {
     }).addTo(map);
 
     map.fitBounds(routeLine.getBounds());
+
+    // Если поле "Откуда" пустое → через 1 минуту очищаем карту полностью
+    if (!from || from.trim() === "") {
+      setTimeout(() => {
+        if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+        if (router) { map.removeControl(router); router = null; }
+        if (carMarker) { map.removeLayer(carMarker); }
+        routeCoords = [];
+        document.getElementById("progress-fill").style.width = "0%";
+        document.getElementById("progress-text").innerText = "Пройдено: 0%";
+        document.getElementById("eta").innerText = "--:--:--";
+        if (progressInterval) clearInterval(progressInterval);
+        if (animateFrame) cancelAnimationFrame(animateFrame);
+      }, 60000);
+    }
   });
 }
 
@@ -242,19 +259,15 @@ if (userId) {
   const ref = doc(db, "investors", userId);
 
   onSnapshot(ref, async (snap) => {
-    if (!snap.exists()) {
-      alert("Клиент не найден");
-      return;
-    }
+    if (!snap.exists()) return;
 
     const d = snap.data();
 
     document.getElementById("clientName").innerText = d.name;
     document.getElementById("fromCity").innerText = d.from;
     document.getElementById("toCity").innerText = d.to;
-    let infoText = d.info || "—";
 
-    // Мигающая отмена
+    let infoText = d.info || "—";
     if (infoText.toLowerCase().includes("отмена!")) {
       infoText = infoText.replace(/отмена!/gi, 
         '<span class="cancel-blink">ОТМЕНА!</span>');
@@ -266,15 +279,15 @@ if (userId) {
       ? d.startTime.toDate()
       : new Date(d.startTime);
 
-    // Если точка изменилась — перестраиваем маршрут
     if (d.from !== lastFrom || d.to !== lastTo) {
       lastFrom = d.from;
       lastTo = d.to;
       await buildRoute(d.from, d.to);
     }
 
-    // Таймер + %
-    setInterval(() => {
+    // Таймер прогресса
+    if (progressInterval) clearInterval(progressInterval);
+    progressInterval = setInterval(() => {
       const now = new Date();
       const total = endTime - startTime;
       const passed = now - startTime;
@@ -297,23 +310,21 @@ if (userId) {
     // Анимация машины
     function animateCar() {
       if (!routeCoords || routeCoords.length === 0) {
-        requestAnimationFrame(animateCar);
+        animateFrame = requestAnimationFrame(animateCar);
         return;
       }
 
       const totalMs = endTime - startTime;
       const elapsed = new Date() - startTime;
       let progress = elapsed / totalMs;
-
-      if (progress > 1) progress = 1;
-      if (progress < 0) progress = 0;
+      progress = Math.max(0, Math.min(1, progress));
 
       const index = Math.floor(progress * (routeCoords.length - 1));
       const pos = routeCoords[index];
 
       carMarker.setLatLng([pos.lat, pos.lng]);
 
-      requestAnimationFrame(animateCar);
+      animateFrame = requestAnimationFrame(animateCar);
     }
 
     animateCar();
