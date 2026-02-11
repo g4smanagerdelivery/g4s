@@ -35,7 +35,7 @@ let endTime = null;
 let routeCoords = [];
 let carMarker = null;
 let routeControl = null;
-let routeProgress = 0; // <-- ВАЖНО: фикс "улёта" при зуме
+let routeProgress = 0;
 
 if (isAdminParam) {
   const p = prompt("Пароль администратора");
@@ -100,8 +100,18 @@ window.onload = () => {
           L.latLng(to[0], to[1])
         ],
         lineOptions: { styles: [{ color: "black", weight: 4 }] },
-        createMarker: () => null
+        createMarker: () => null,
+        addWaypoints: false,
+        draggableWaypoints: false,
+        showAlternatives: false,
+        routeWhileDragging: false
       }).addTo(map);
+
+      // Скрываем панель маршрута (ВАЖНО — то, что ты видел справа)
+      setTimeout(() => {
+        const panel = document.querySelector(".leaflet-routing-container");
+        if (panel) panel.style.display = "none";
+      }, 500);
 
       routeControl.on("routesfound", function(e) {
         routeCoords = e.routes[0].coordinates;
@@ -110,7 +120,6 @@ window.onload = () => {
         if (carMarker) map.removeLayer(carMarker);
         carMarker = L.marker(routeCoords[0], { icon: carIcon }).addTo(map);
 
-        // ФИКС: возвращаем машину на место после зума/движения карты
         map.on("zoomend moveend", () => {
           if (!carMarker || routeCoords.length === 0) return;
           const idx = Math.floor(routeProgress * (routeCoords.length - 1));
