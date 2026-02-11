@@ -57,11 +57,6 @@ body { margin:0; font-family: Arial; background:#f2f2f2; }
   transition: width 0.3s linear;
 }
 
-#progress-text {
-  margin-top: 5px;
-  font-weight: bold;
-}
-
 /* Убираем лишние элементы карты */
 .leaflet-control-attribution,
 .leaflet-routing-container {
@@ -160,7 +155,9 @@ const carIcon = L.icon({
 let carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
 let routeLine = null;
 let routeCoords = [];
-let animationStarted = false;
+let router = null;
+let lastFrom = null;
+let lastTo = null;
 
 // ===== ГЕОКОДИНГ ГОРОДА =====
 async function geocodeCity(city) {
@@ -178,7 +175,50 @@ async function geocodeCity(city) {
   return [48.0196, 66.9237];
 }
 
-// ===== ЗАГРУЗКА ДАННЫХ КЛИЕНТА =====
+// ===== ПЕРЕСТРОИТЬ МАРШРУТ =====
+async function buildRoute(from, to) {
+  // Удаляем старый маршрут
+  if (routeLine) {
+    map.removeLayer(routeLine);
+    routeLine = null;
+  }
+  if (router) {
+    map.removeControl(router);
+    router = null;
+  }
+
+  routeCoords = [];
+
+  const fromCoords = await geocodeCity(from);
+  const toCoords = await geocodeCity(to);
+
+  router = L.Routing.control({
+    waypoints: [
+      L.latLng(fromCoords[0], fromCoords[1]),
+      L.latLng(toCoords[0], toCoords[1])
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true
+  }).addTo(map);
+
+  router.on("routesfound", function(e) {
+    const route = e.routes[0];
+    routeCoords = route.coordinates;
+
+    routeLine = L.polyline(routeCoords, {
+      color: "blue",
+      weight: 5
+    }).addTo(map);
+
+    map.fitBounds(routeLine.getBounds());
+  });
+}
+
+// ===== КЛИЕНТСКАЯ ЧАСТЬ =====
 if (userId) {
   const ref = doc(db, "investors", userId);
 
@@ -200,7 +240,14 @@ if (userId) {
       ? d.startTime.toDate()
       : new Date(d.startTime);
 
-    // ===== ТАЙМЕР + ПРОЦЕНТ =====
+    // Если точка изменилась — перестраиваем маршрут
+    if (d.from !== lastFrom || d.to !== lastTo) {
+      lastFrom = d.from;
+      lastTo = d.to;
+      await buildRoute(d.from, d.to);
+    }
+
+    // Таймер + %
     setInterval(() => {
       const now = new Date();
       const total = endTime - startTime;
@@ -221,43 +268,7 @@ if (userId) {
         `Пройдено: ${percent}%`;
     }, 1000);
 
-    // ===== СТРОИМ МАРШРУТ (ТОЛЬКО 1 РАЗ) =====
-    if (!routeLine) {
-      const fromCoords = await geocodeCity(d.from);
-      const toCoords = await geocodeCity(d.to);
-
-      const router = L.Routing.control({
-        waypoints: [
-          L.latLng(fromCoords[0], fromCoords[1]),
-          L.latLng(toCoords[0], toCoords[1])
-        ],
-        router: L.Routing.osrmv1({
-          serviceUrl: "https://router.project-osrm.org/route/v1"
-        }),
-        addWaypoints: false,
-        draggableWaypoints: false,
-        fitSelectedRoutes: true
-      }).addTo(map);
-
-      router.on("routesfound", function(e) {
-        const route = e.routes[0];
-        routeCoords = route.coordinates;
-
-        routeLine = L.polyline(routeCoords, {
-          color: "blue",
-          weight: 5
-        }).addTo(map);
-
-        map.fitBounds(routeLine.getBounds());
-
-        if (!animationStarted) {
-          animationStarted = true;
-          animateCar();
-        }
-      });
-    }
-
-    // ===== АНИМАЦИЯ МАШИНЫ (ПРИВЯЗАНА К ВРЕМЕНИ) =====
+    // Анимация машины
     function animateCar() {
       if (!routeCoords || routeCoords.length === 0) {
         requestAnimationFrame(animateCar);
@@ -278,6 +289,8 @@ if (userId) {
 
       requestAnimationFrame(animateCar);
     }
+
+    animateCar();
   });
 }
 
