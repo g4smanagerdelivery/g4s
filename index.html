@@ -233,7 +233,15 @@ if (userId) {
     document.getElementById("clientName").innerText = d.name;
     document.getElementById("fromCity").innerText = d.from;
     document.getElementById("toCity").innerText = d.to;
-    document.getElementById("infoText").innerText = d.info || "—";
+    let infoText = d.info || "—";
+
+// Если есть слово "отмена!"
+if (infoText.toLowerCase().includes("отмена!")) {
+  infoText = infoText.replace(/отмена!/gi, 
+    '<span style="color:red; font-weight:bold;">ОТМЕНА!</span>');
+}
+
+document.getElementById("infoText").innerHTML = infoText;
 
     const endTime = new Date(d.endTime);
     const startTime = d.startTime?.toDate
@@ -349,3 +357,4 @@ window.copyLink = function() {
 
 </body>
 </html>
+
