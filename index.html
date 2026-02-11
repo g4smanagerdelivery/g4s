@@ -1,270 +1,185 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>G4S Инкассационная доставка</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<title>Трекер доставки</title>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
-  authDomain: "auction-top7.firebaseapp.com",
-  projectId: "auction-top7",
-  storageBucket: "auction-top7.firebasestorage.app",
-  messagingSenderId: "73096110012",
-  appId: "1:73096110012:web:8f014f6faae5d08bd455b9"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-const params = new URLSearchParams(location.search);
-const userId = decodeURIComponent(params.get("user") || "");
-const isAdminParam = params.get("admin") === "true";
-
-const ADMIN_PASSWORD = "123456";
-let isAdmin = false;
-let endTime = null;
-let routeCoords = [];
-let carMarker = null;
-let routeControl = null;
-let routeProgress = 0;
-
-if (isAdminParam) {
-  const p = prompt("Пароль администратора");
-  if (p === ADMIN_PASSWORD) isAdmin = true;
-  else throw new Error("Access denied");
-}
-
-window.onload = () => {
-  document.getElementById("admin").style.display = isAdmin ? "block" : "none";
-
-  const map = L.map("map").setView([48.0196, 66.9237], 5);
-
-  // Нейтральная бесплатная карта (без флагов)
-  L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-    { attribution: "Esri" }
-  ).addTo(map);
-
-  const carIcon = L.icon({
-    iconUrl: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
-    iconSize: [32, 32]
-  });
-
-  if (userId) {
-    const ref = doc(db, "investors", userId);
-
-    onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
-        document.getElementById("view").innerHTML = "<h1>Данные не найдены</h1>";
-        return;
-      }
-
-      const d = snap.data();
-      endTime = new Date(d.endTime);
-
-      document.getElementById("view").innerHTML = `
-        <div class="card">
-          <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
-          <h3>Получатель:</h3>
-          <p class="fio">${d.name}</p>
-
-          <h3>Примерное время прибытия:</h3>
-          <p id="time" class="timer">--:--:--</p>
-
-          <h3>Маршрут:</h3>
-          <p><b>Откуда:</b> ${d.from}</p>
-          <p><b>Куда:</b> ${d.to}</p>
-
-          <h3>Информация:</h3>
-          <div class="info-box">${(d.info || "").replace(/\n/g, "<br>")}</div>
-        </div>
-      `;
-
-      const from = [d.fromLat, d.fromLng];
-      const to = [d.toLat, d.toLng];
-
-      if (routeControl) map.removeControl(routeControl);
-
-      routeControl = L.Routing.control({
-        waypoints: [
-          L.latLng(from[0], from[1]),
-          L.latLng(to[0], to[1])
-        ],
-        lineOptions: { styles: [{ color: "black", weight: 4 }] },
-        createMarker: () => null,
-        addWaypoints: false,
-        draggableWaypoints: false,
-        showAlternatives: false,
-        routeWhileDragging: false
-      }).addTo(map);
-
-      // Скрываем панель маршрута (ВАЖНО — то, что ты видел справа)
-      setTimeout(() => {
-        const panel = document.querySelector(".leaflet-routing-container");
-        if (panel) panel.style.display = "none";
-      }, 500);
-
-      routeControl.on("routesfound", function(e) {
-        routeCoords = e.routes[0].coordinates;
-        map.fitBounds(L.latLngBounds(routeCoords));
-
-        if (carMarker) map.removeLayer(carMarker);
-        carMarker = L.marker(routeCoords[0], { icon: carIcon }).addTo(map);
-
-        map.on("zoomend moveend", () => {
-          if (!carMarker || routeCoords.length === 0) return;
-          const idx = Math.floor(routeProgress * (routeCoords.length - 1));
-          carMarker.setLatLng(routeCoords[idx]);
-        });
-      });
-    });
-  }
-
-  setInterval(() => {
-    updateTimer();
-    moveCarByTime();
-  }, 1000);
-};
-
-function updateTimer() {
-  if (!endTime) return;
-  const diff = Math.max(0, endTime - new Date());
-  const h = Math.floor(diff / 36e5);
-  const m = Math.floor(diff % 36e5 / 6e4);
-  const s = Math.floor(diff % 6e4 / 1000);
-
-  const el = document.getElementById("time");
-  if (el) el.textContent = `${h}ч ${m}м ${s}с`;
-}
-
-function moveCarByTime() {
-  if (!carMarker || routeCoords.length === 0 || !endTime) return;
-
-  const totalMs = 2 * 60 * 60 * 1000; // 2 часа "виртуальный путь"
-  const elapsed = Math.max(0, totalMs - (endTime - Date.now()));
-
-  routeProgress = Math.min(1, elapsed / totalMs);
-
-  const idx = Math.floor(routeProgress * (routeCoords.length - 1));
-  carMarker.setLatLng(routeCoords[idx]);
-}
-
-// ======== АДМИН: геокодируем города ТОЛЬКО у админа ========
-async function geocodeCity(city) {
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(city + ", Kazakhstan")}`;
-  const r = await fetch(url);
-  const j = await r.json();
-
-  if (!j.features || j.features.length === 0) return null;
-
-  return {
-    lat: j.features[0].geometry.coordinates[1],
-    lng: j.features[0].geometry.coordinates[0]
-  };
-}
-
-window.saveUser = async () => {
-  const id = uid.value.trim();
-  const name = uname.value.trim();
-  const t = endInput.value;
-  const from = ufrom.value.trim();
-  const to = uto.value.trim();
-  const info = uinfo.value;
-
-  if (!id || !name || !t || !from || !to) {
-    alert("Заполни все поля!");
-    return;
-  }
-
-  document.getElementById("status").innerText = "Ищу координаты городов…";
-
-  const fromC = await geocodeCity(from);
-  const toC = await geocodeCity(to);
-
-  if (!fromC || !toC) {
-    alert("Ошибка маршрута — проверь названия городов.");
-    return;
-  }
-
-  document.getElementById("status").innerText = "Сохраняю… ⏳";
-
-  await setDoc(doc(db, "investors", id), {
-    name,
-    endTime: new Date(t).toISOString(),
-    from,
-    to,
-    fromLat: fromC.lat,
-    fromLng: fromC.lng,
-    toLat: toC.lat,
-    toLng: toC.lng,
-    info: info || "—"
-  });
-
-  const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
-  await navigator.clipboard.writeText(link);
-
-  document.getElementById("status").innerHTML =
-    `Готово ✅<br>Ссылка скопирована:<br><b>${link}</b>`;
-};
-</script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
 
 <style>
-body { font-family: Arial; margin: 0; display: flex; }
-
-#left {
-  width: 40%;
-  padding: 20px;
-  background: #f2f2f2;
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: Arial, sans-serif;
 }
 
-#map {
-  width: 60%;
+#container {
+  display: flex;
   height: 100vh;
 }
 
-.card {
-  background: white;
+#info {
+  width: 35%;
   padding: 20px;
-  border-radius: 12px;
+  box-sizing: border-box;
+  background: #f5f5f5;
 }
 
-#admin {
-  display: none;
-  margin-top: 20px;
-  background: white;
-  padding: 20px;
+#map {
+  width: 65%;
+  height: 100%;
 }
 
-input, textarea { width: 100%; margin: 5px 0; padding: 8px; }
+/* Убираем панель маршрута справа */
+.leaflet-routing-container {
+  display: none !important;
+}
 </style>
 </head>
 
 <body>
-<div id="left">
-  <div id="view"><h1>Загрузка…</h1></div>
 
-  <div id="admin">
-    <h2>Админ-панель</h2>
-    <input id="uid" placeholder="ID (например: Tuman)">
-    <input id="uname" placeholder="ФИО">
-    <input type="datetime-local" id="endInput">
-    <input id="ufrom" placeholder="Откуда (город)">
-    <input id="uto" placeholder="Куда (город)">
-    <textarea id="uinfo" rows="5" placeholder="Информация"></textarea>
-    <button onclick="saveUser()">Сохранить</button>
-    <p id="status" style="color:green"></p>
+<div id="container">
+  <div id="info">
+    <h2>ИНКАССАЦИОННАЯ ДОСТАВКА</h2>
+
+    <p><b>Получатель:</b> <span id="clientName">—</span></p>
+
+    <p><b>Примерное время прибытия:</b><br>
+    <span id="eta">Загрузка...</span></p>
+
+    <p><b>Маршрут:</b><br>
+    Откуда: <span id="fromCity">—</span><br>
+    Куда: <span id="toCity">—</span></p>
+
+    <p><b>Информация:</b><br>
+    <span id="infoText">—</span></p>
   </div>
+
+  <div id="map"></div>
 </div>
 
-<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+<script>
+// ======== КАРТА (БЕЗ + / - И БЕЗ ЛИШНЕГО) ========
+const map = L.map("map", {
+  zoomControl: false,      // <-- убрали +/-
+  attributionControl: false
+}).setView([48.0196, 66.9237], 5);
+
+// Нейтральная бесплатная карта (не украинская)
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+  { attribution: "Esri" }
+).addTo(map);
+
+// ======== ИКОНКА МАШИНЫ ========
+const carIcon = L.icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
+});
+
+let carMarker = L.marker([0,0], { icon: carIcon });
+
+// ======== ДАННЫЕ (ЗАМЕНИ НА СВОИ) ========
+const clientData = {
+  name: "Туман Туман",
+  from: "Astana",
+  to: "Airtam",
+  info: "Инкассационная доставка",
+  totalTimeMinutes: 238 // <-- сколько ехать всего (3ч 58м = 238 минут)
+};
+
+document.getElementById("clientName").innerText = clientData.name;
+document.getElementById("fromCity").innerText = clientData.from;
+document.getElementById("toCity").innerText = clientData.to;
+document.getElementById("infoText").innerText = clientData.info;
+
+// ======== ГЕОКОДИНГ (ищем города) ========
+async function geocodeCity(city) {
+  const url =
+    "https://nominatim.openstreetmap.org/search?format=json&q=" +
+    encodeURIComponent(city + ", Kazakhstan");
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (!data || data.length === 0) {
+    throw new Error("Город не найден: " + city);
+  }
+
+  return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+}
+
+// ======== СТРОИМ МАРШРУТ И АНИМИРУЕМ МАШИНУ ========
+async function buildRoute() {
+  const fromCoords = await geocodeCity(clientData.from);
+  const toCoords = await geocodeCity(clientData.to);
+
+  const routeControl = L.Routing.control({
+    waypoints: [
+      L.latLng(fromCoords[0], fromCoords[1]),
+      L.latLng(toCoords[0], toCoords[1])
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true
+  }).addTo(map);
+
+  routeControl.on("routesfound", function(e) {
+    const route = e.routes[0];
+    const coords = route.coordinates; // точки маршрута
+
+    // Добавляем машину в начало маршрута
+    carMarker.setLatLng(coords[0]);
+    carMarker.addTo(map);
+
+    // ======== АНИМАЦИЯ ПО ВРЕМЕНИ ========
+    let startTime = Date.now();
+    let totalMs = clientData.totalTimeMinutes * 60 * 1000;
+
+    function animate() {
+      let elapsed = Date.now() - startTime;
+      let progress = elapsed / totalMs;
+
+      if (progress > 1) progress = 1;
+
+      let index = Math.floor(progress * (coords.length - 1));
+      carMarker.setLatLng(coords[index]);
+
+      // Таймер для клиента
+      let remainingMs = totalMs - elapsed;
+      if (remainingMs < 0) remainingMs = 0;
+
+      let hours = Math.floor(remainingMs / 3600000);
+      let minutes = Math.floor((remainingMs % 3600000) / 60000);
+      let seconds = Math.floor((remainingMs % 60000) / 1000);
+
+      document.getElementById("eta").innerText =
+        hours + "ч " + minutes + "м " + seconds + "с";
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    }
+
+    animate();
+  });
+}
+
+// Запуск
+buildRoute().catch(err => alert("Ошибка маршрута: " + err.message));
+</script>
+
 </body>
 </html>
