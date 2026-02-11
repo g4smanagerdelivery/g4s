@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <title>G4S Инкассационная доставка</title>
 
-<!-- Leaflet (карта) -->
+<!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- Leaflet Routing Machine (маршрут по дорогам) -->
+<!-- Leaflet Routing Machine -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
@@ -121,7 +121,19 @@ const db = getFirestore(app);
 // ===== ПАРАМЕТРЫ =====
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
-const isAdmin = params.get("admin") === "true";
+
+// ===== ПАРОЛЬ АДМИНА =====
+const ADMIN_PASSWORD = "123456";   // <-- можешь поменять
+let isAdmin = false;
+
+if (params.get("admin") === "true") {
+  const p = prompt("Введите пароль администратора");
+  if (p === ADMIN_PASSWORD) {
+    isAdmin = true;
+  } else {
+    alert("Неверный пароль");
+  }
+}
 
 // ===== КАРТА =====
 const map = L.map("map", {
@@ -144,7 +156,7 @@ const carIcon = L.icon({
 
 let carMarker = L.marker([0, 0], { icon: carIcon });
 
-// ===== УМНЫЙ ПОИСК ГОРОДА (работает для любых городов/посёлков) =====
+// ===== УМНЫЙ ПОИСК ГОРОДА =====
 async function geocodeCity(city) {
   const tries = [
     `${city}, Kazakhstan`,
@@ -169,8 +181,7 @@ async function geocodeCity(city) {
     }
   }
 
-  // Если вообще не найден — ставим центр Казахстана
-  return [48.0196, 66.9237];
+  return [48.0196, 66.9237]; // центр Казахстана
 }
 
 // ===== ЗАГРУЗКА ДАННЫХ ИЗ FIREBASE =====
@@ -249,11 +260,12 @@ if (userId) {
   });
 }
 
-// ===== АДМИНКА =====
+// ===== ПОКАЗ АДМИНКИ =====
 if (isAdmin) {
   document.getElementById("admin").style.display = "block";
 }
 
+// ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
 window.saveUser = async function() {
   const id = uid.value.trim();
   const name = uname.value.trim();
