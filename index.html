@@ -4,11 +4,120 @@
 <meta charset="UTF-8">
 <title>G4S Инкассационная доставка</title>
 
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+<style>
+body { margin:0; font-family: Arial; background:#f2f2f2; }
+#container { display:flex; height:100vh; }
+
+#info {
+  width: 40%;
+  padding: 20px;
+  background: white;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+#map {
+  width: 60%;
+  height: 100vh;
+  position: relative;
+}
+
+/* ===== ШКАЛА ПРОГРЕССА ===== */
+#progress-wrapper {
+  position: absolute;
+  bottom: 20px;
+  left: 10%;
+  width: 80%;
+  background: rgba(255,255,255,0.9);
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 0 5px rgba(0,0,0,0.2);
+  text-align: center;
+  z-index: 1000;
+}
+
+#progress-bar {
+  width: 100%;
+  height: 10px;
+  background: #ddd;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+#progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #007bff;
+  transition: width 0.3s linear;
+}
+
+/* Убираем лишние элементы карты */
+.leaflet-control-attribution,
+.leaflet-routing-container {
+  display: none !important;
+}
+</style>
+</head>
+
+<body>
+
+<div id="container">
+
+  <div id="info">
+    <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+
+    <h3>Получатель:</h3>
+    <p id="clientName">Загрузка…</p>
+
+    <h3>Время прибытия:</h3>
+    <p id="eta">--:--:--</p>
+
+    <h3>Маршрут:</h3>
+    <p><b>Откуда:</b> <span id="fromCity"></span></p>
+    <p><b>Куда:</b> <span id="toCity"></span></p>
+
+    <h3>Информация:</h3>
+    <p id="infoText"></p>
+
+    <div id="admin" style="display:none; margin-top:20px; padding:15px; background:#f7f7f7;">
+      <h2>Админ-панель</h2>
+
+      <input id="uid" placeholder="ID клиента (например: Tuman)">
+      <input id="uname" placeholder="ФИО">
+      <input type="datetime-local" id="endInput">
+      <input id="fromInput" placeholder="Откуда (город)">
+      <input id="toInput" placeholder="Куда (город)">
+      <textarea id="uinfo" rows="4" placeholder="Информация"></textarea>
+
+      <button onclick="saveUser()">Сохранить</button>
+
+      <div id="clientLinkBox" style="display:none; margin-top:10px;">
+        <b>Ссылка для клиента:</b><br>
+        <span id="clientLink"></span><br>
+        <button onclick="copyLink()">Копировать</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="map">
+    <div id="progress-wrapper">
+      <div id="progress-bar">
+        <div id="progress-fill"></div>
+      </div>
+      <div id="progress-text">Пройдено: 0%</div>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-import {
-  getFirestore, doc, setDoc, onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
@@ -24,189 +133,219 @@ const db = getFirestore(app);
 
 const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
-const isAdminParam = params.get("admin") === "true";
 
-const ADMIN_PASSWORD = "123456";
-let isAdmin = false;
-let endTime = null;
+// ===== КАРТА =====
+const map = L.map("map", {
+  zoomControl: false,
+  attributionControl: false
+}).setView([48.0196, 66.9237], 5);
 
-if (isAdminParam) {
-  const p = prompt("Пароль администратора");
-  if (p === ADMIN_PASSWORD) isAdmin = true;
-  else alert("Неверный пароль");
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+  { attribution: "Esri" }
+).addTo(map);
+
+// ===== ИКОНКА МАШИНЫ =====
+const carIcon = L.icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
+});
+
+let carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
+let routeLine = null;
+let routeCoords = [];
+let router = null;
+let lastFrom = null;
+let lastTo = null;
+
+// ===== ГЕОКОДИНГ ГОРОДА =====
+async function geocodeCity(city) {
+  const url =
+    "https://nominatim.openstreetmap.org/search?format=json&q=" +
+    encodeURIComponent(city + ", Kazakhstan");
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (data && data.length > 0) {
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  }
+
+  return [48.0196, 66.9237];
 }
 
-window.onload = () => {
-  const admin = document.getElementById("admin");
-  const view = document.getElementById("view");
+// ===== ПЕРЕСТРОИТЬ МАРШРУТ =====
+async function buildRoute(from, to) {
+  // Удаляем старый маршрут
+  if (routeLine) {
+    map.removeLayer(routeLine);
+    routeLine = null;
+  }
+  if (router) {
+    map.removeControl(router);
+    router = null;
+  }
 
-  if (isAdmin) admin.style.display = "block";
+  routeCoords = [];
 
-  if (userId) {
-    const ref = doc(db, "investors", userId);
+  const fromCoords = await geocodeCity(from);
+  const toCoords = await geocodeCity(to);
 
-    onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
-        view.innerHTML = "<h1>Данные не найдены</h1>";
+  router = L.Routing.control({
+    waypoints: [
+      L.latLng(fromCoords[0], fromCoords[1]),
+      L.latLng(toCoords[0], toCoords[1])
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true
+  }).addTo(map);
+
+  router.on("routesfound", function(e) {
+    const route = e.routes[0];
+    routeCoords = route.coordinates;
+
+    routeLine = L.polyline(routeCoords, {
+      color: "blue",
+      weight: 5
+    }).addTo(map);
+
+    map.fitBounds(routeLine.getBounds());
+  });
+}
+
+// ===== КЛИЕНТСКАЯ ЧАСТЬ =====
+if (userId) {
+  const ref = doc(db, "investors", userId);
+
+  onSnapshot(ref, async (snap) => {
+    if (!snap.exists()) {
+      alert("Клиент не найден");
+      return;
+    }
+
+    const d = snap.data();
+
+    document.getElementById("clientName").innerText = d.name;
+    document.getElementById("fromCity").innerText = d.from;
+    document.getElementById("toCity").innerText = d.to;
+    document.getElementById("infoText").innerText = d.info || "—";
+
+    const endTime = new Date(d.endTime);
+    const startTime = d.startTime?.toDate
+      ? d.startTime.toDate()
+      : new Date(d.startTime);
+
+    // Если точка изменилась — перестраиваем маршрут
+    if (d.from !== lastFrom || d.to !== lastTo) {
+      lastFrom = d.from;
+      lastTo = d.to;
+      await buildRoute(d.from, d.to);
+    }
+
+    // Таймер + %
+    setInterval(() => {
+      const now = new Date();
+      const total = endTime - startTime;
+      const passed = now - startTime;
+      let progress = Math.min(1, Math.max(0, passed / total));
+
+      const diff = Math.max(0, endTime - now);
+      const h = Math.floor(diff / 36e5);
+      const m = Math.floor(diff % 36e5 / 6e4);
+      const s = Math.floor(diff % 6e4 / 1000);
+
+      document.getElementById("eta").innerText =
+        `${h}ч ${m}м ${s}с`;
+
+      const percent = Math.round(progress * 100);
+      document.getElementById("progress-fill").style.width = percent + "%";
+      document.getElementById("progress-text").innerText =
+        `Пройдено: ${percent}%`;
+    }, 1000);
+
+    // Анимация машины
+    function animateCar() {
+      if (!routeCoords || routeCoords.length === 0) {
+        requestAnimationFrame(animateCar);
         return;
       }
 
-      const d = snap.data();
-      endTime = new Date(d.endTime);
+      const totalMs = endTime - startTime;
+      const elapsed = new Date() - startTime;
+      let progress = elapsed / totalMs;
 
-      // === ОБРАБОТКА ИНФОРМАЦИИ С МИГАЮЩЕЙ "ОТМЕНА!" ===
-      let infoText = d.info || "—";
+      if (progress > 1) progress = 1;
+      if (progress < 0) progress = 0;
 
-      if (infoText.toLowerCase().includes("отмена!")) {
-        infoText = infoText.replace(/отмена!/gi, 
-          '<span class="cancel-blink">ОТМЕНА!</span>');
-      }
+      const index = Math.floor(progress * (routeCoords.length - 1));
+      const pos = routeCoords[index];
 
-      view.innerHTML = `
-        <div class="card">
-          <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+      carMarker.setLatLng([pos.lat, pos.lng]);
 
-          <h3>ФИО:</h3>
-          <p class="fio">${d.name}</p>
+      requestAnimationFrame(animateCar);
+    }
 
-          <h3>Примерное время прибытия:</h3>
-          <p id="time" class="timer">--:--:--</p>
+    animateCar();
+  });
+}
 
-          <h3>Информация о доставке:</h3>
-          <div class="info-box" id="infoText">${infoText}</div>
-        </div>
-      `;
-    });
-  }
-
-  setInterval(updateTimer, 1000);
-};
-
-function updateTimer() {
-  if (!endTime) return;
-  const diff = Math.max(0, endTime - new Date());
-  const h = Math.floor(diff / 36e5);
-  const m = Math.floor(diff % 36e5 / 6e4);
-  const s = Math.floor(diff % 6e4 / 1000);
-
-  const timeEl = document.getElementById("time");
-  if (timeEl) {
-    timeEl.textContent = `${h}ч ${m}м ${s}с`;
-    timeEl.style.color = h < 5 ? "red" : "black";
+// ===== АДМИН-ПАНЕЛЬ =====
+if (params.get("admin") === "true") {
+  const p = prompt("Введите пароль администратора");
+  if (p === "123456") {
+    document.getElementById("admin").style.display = "block";
+  } else {
+    alert("Неверный пароль");
   }
 }
 
-window.saveUser = async () => {
-  const id = uid.value;
-  const name = uname.value;
+window.saveUser = async function() {
+  const id = uid.value.trim();
+  const name = uname.value.trim();
   const t = endInput.value;
+  const from = fromInput.value.trim();
+  const to = toInput.value.trim();
   const info = uinfo.value;
 
-  if (!id || !name || !t) {
-    alert("Заполни ID, ФИО и время");
+  if (!id || !name || !t || !from || !to) {
+    alert("Заполни все поля");
     return;
   }
-
-  await setDoc(doc(db, "investors", id), {
-    name: name,
-    endTime: new Date(t).toISOString(),
-    info: info || "—"
-  });
 
   const link =
     location.origin + location.pathname + "?user=" + encodeURIComponent(id);
 
-  navigator.clipboard.writeText(link).then(() => {
-    alert("Сохранено ✅\nСсылка скопирована:\n\n" + link);
+  await setDoc(doc(db, "investors", id), {
+    name,
+    from,
+    to,
+    endTime: new Date(t).toISOString(),
+    startTime: serverTimestamp(),
+    info: info || "—"
   });
+
+  document.getElementById("clientLink").innerText = link;
+  document.getElementById("clientLinkBox").style.display = "block";
+
+  try {
+    await navigator.clipboard.writeText(link);
+    alert("Сохранено! Ссылка скопирована.");
+  } catch {
+    alert("Сохранено! Нажми кнопку 'Копировать'.");
+  }
+};
+
+window.copyLink = function() {
+  const text = document.getElementById("clientLink").innerText;
+  navigator.clipboard.writeText(text);
+  alert("Ссылка скопирована!");
 };
 </script>
-
-<style>
-body {
-  font-family: Arial;
-  background-color: #f2f2f2;
-  padding: 30px;
-  text-align: center;
-}
-
-/* ===== КАРТОЧКА ===== */
-.card {
-  background: white;
-  max-width: 700px;
-  margin: auto;
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-.fio {
-  font-size: 22px;
-  font-weight: bold;
-}
-
-.timer {
-  font-size: 24px;
-  font-weight: bold;
-}
-
-.info-box {
-  background: #f3f3f3;
-  padding: 15px;
-  border-radius: 8px;
-  margin: 10px 0;
-  text-align: left;
-  font-size: 20px;
-}
-
-/* ===== МИГАЮЩАЯ ОТМЕНА ===== */
-.cancel-blink {
-  color: red;
-  font-weight: bold;
-  animation: blink 1s infinite;
-}
-
-@keyframes blink {
-  0% { opacity: 1; }
-  50% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-/* ===== АДМИНКА ===== */
-#admin {
-  display: none;
-  margin-top: 30px;
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  max-width: 700px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-#admin input, #admin textarea {
-  width: 100%;
-  margin: 5px 0;
-  padding: 8px;
-}
-</style>
-</head>
-
-<body>
-
-<div id="view">
-  <h1>Загрузка…</h1>
-</div>
-
-<div id="admin">
-  <h2>Админ-панель</h2>
-
-  <input id="uid" placeholder="ID (tuman)">
-  <input id="uname" placeholder="ФИО">
-  <input type="datetime-local" id="endInput">
-  <textarea id="uinfo" rows="5" placeholder="Информация о доставке"></textarea>
-  <button onclick="saveUser()">Сохранить</button>
-</div>
 
 </body>
 </html>
