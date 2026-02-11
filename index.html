@@ -12,69 +12,68 @@
 
 <style>
   .cancel-blink {
-  color: red;
-  font-weight: bold;
-  animation: blink 1s infinite;
-}
+    color: red;
+    font-weight: bold;
+    animation: blink 1s infinite;
+  }
 
-@keyframes blink {
-  0% { opacity: 1; }
-  50% { opacity: 0; }
-  100% { opacity: 1; }
-}
-  
-body { margin:0; font-family: Arial; background:#f2f2f2; }
-#container { display:flex; height:100vh; }
+  @keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0; }
+    100% { opacity: 1; }
+  }
 
-#info {
-  width: 40%;
-  padding: 20px;
-  background: white;
-  box-sizing: border-box;
-  overflow-y: auto;
-}
+  body { margin:0; font-family: Arial; background:#f2f2f2; }
+  #container { display:flex; height:100vh; }
 
-#map {
-  width: 60%;
-  height: 100vh;
-  position: relative;
-}
+  #info {
+    width: 40%;
+    padding: 20px;
+    background: white;
+    box-sizing: border-box;
+    overflow-y: auto;
+  }
 
-/* ===== ШКАЛА ПРОГРЕССА ===== */
-#progress-wrapper {
-  position: absolute;
-  bottom: 20px;
-  left: 10%;
-  width: 80%;
-  background: rgba(255,255,255,0.9);
-  padding: 10px;
-  border-radius: 8px;
-  box-shadow: 0 0 5px rgba(0,0,0,0.2);
-  text-align: center;
-  z-index: 1000;
-}
+  #map {
+    width: 60%;
+    height: 100vh;
+    position: relative;
+  }
 
-#progress-bar {
-  width: 100%;
-  height: 10px;
-  background: #ddd;
-  border-radius: 5px;
-  overflow: hidden;
-}
+  /* ===== ШКАЛА ПРОГРЕССА ===== */
+  #progress-wrapper {
+    position: absolute;
+    bottom: 20px;
+    left: 10%;
+    width: 80%;
+    background: rgba(255,255,255,0.9);
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.2);
+    text-align: center;
+    z-index: 1000;
+  }
 
-#progress-fill {
-  height: 100%;
-  width: 0%;
-  background: #007bff;
-  transition: width 0.3s linear;
-}
+  #progress-bar {
+    width: 100%;
+    height: 10px;
+    background: #ddd;
+    border-radius: 5px;
+    overflow: hidden;
+  }
 
-/* Убираем лишние элементы карты */
-.leaflet-control-attribution,
-.leaflet-routing-container {
-  display: none !important;
-}
-  
+  #progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #007bff;
+    transition: width 0.3s linear;
+  }
+
+  /* Убираем лишние элементы карты */
+  .leaflet-control-attribution,
+  .leaflet-routing-container {
+    display: none !important;
+  }
 </style>
 </head>
 
@@ -165,7 +164,7 @@ const carIcon = L.icon({
   iconAnchor: [20, 20]
 });
 
-let carMarker = L.marker([0, 0], { icon: carIcon }).addTo(map);
+let carMarker = L.marker([48.0196, 66.9237], { icon: carIcon }).addTo(map);
 let routeLine = null;
 let routeCoords = [];
 let router = null;
@@ -190,7 +189,6 @@ async function geocodeCity(city) {
 
 // ===== ПЕРЕСТРОИТЬ МАРШРУТ =====
 async function buildRoute(from, to) {
-  // Удаляем старый маршрут
   if (routeLine) {
     map.removeLayer(routeLine);
     routeLine = null;
@@ -202,7 +200,15 @@ async function buildRoute(from, to) {
 
   routeCoords = [];
 
-  const fromCoords = await geocodeCity(from);
+  // Если поле "откуда" пустое, берем текущую позицию машины
+  let fromCoords;
+  if (!from || from.trim() === "") {
+    const currentPos = carMarker.getLatLng();
+    fromCoords = [currentPos.lat, currentPos.lng];
+  } else {
+    fromCoords = await geocodeCity(from);
+  }
+
   const toCoords = await geocodeCity(to);
 
   router = L.Routing.control({
@@ -248,14 +254,12 @@ if (userId) {
     document.getElementById("toCity").innerText = d.to;
     let infoText = d.info || "—";
 
-// Если есть слово "отмена!"
-// ===== МИГАЮЩИЙ ТЕКСТ "ОТМЕНА!" =====
-if (infoText.toLowerCase().includes("отмена!")) {
-  infoText = infoText.replace(/отмена!/gi, 
-    '<span class="cancel-blink">ОТМЕНА!</span>');
-}
-
-document.getElementById("infoText").innerHTML = infoText;
+    // Мигающая отмена
+    if (infoText.toLowerCase().includes("отмена!")) {
+      infoText = infoText.replace(/отмена!/gi, 
+        '<span class="cancel-blink">ОТМЕНА!</span>');
+    }
+    document.getElementById("infoText").innerHTML = infoText;
 
     const endTime = new Date(d.endTime);
     const startTime = d.startTime?.toDate
@@ -334,8 +338,8 @@ window.saveUser = async function() {
   const to = toInput.value.trim();
   const info = uinfo.value;
 
-  if (!id || !name || !t || !from || !to) {
-    alert("Заполни все поля");
+  if (!id || !name || !t || !to) {
+    alert("Заполни все обязательные поля");
     return;
   }
 
