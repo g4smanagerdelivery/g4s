@@ -54,6 +54,17 @@ body {
   padding: 8px;
 }
 
+/* Поле со ссылкой */
+#clientLinkBox {
+  display: none;
+  margin-top: 10px;
+  padding: 10px;
+  background: #e6ffe6;
+  border: 1px solid #00aa00;
+  border-radius: 6px;
+  word-break: break-all;
+}
+
 /* Убираем лишние элементы Leaflet */
 .leaflet-control-attribution,
 .leaflet-routing-container {
@@ -95,6 +106,13 @@ body {
       <textarea id="uinfo" rows="4" placeholder="Информация о доставке"></textarea>
 
       <button onclick="saveUser()">Сохранить</button>
+
+      <!-- Здесь появится ссылка -->
+      <div id="clientLinkBox">
+        <b>Ссылка для клиента:</b><br>
+        <span id="clientLink"></span><br><br>
+        <button onclick="copyLink()">Копировать ссылку</button>
+      </div>
     </div>
   </div>
 
@@ -123,7 +141,7 @@ const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 
 // ===== ПАРОЛЬ АДМИНА =====
-const ADMIN_PASSWORD = "123456";   // <-- можешь поменять
+const ADMIN_PASSWORD = "123456";
 let isAdmin = false;
 
 if (params.get("admin") === "true") {
@@ -141,7 +159,6 @@ const map = L.map("map", {
   attributionControl: false
 }).setView([48.0196, 66.9237], 5);
 
-// Нейтральная бесплатная карта (без флагов)
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
   { attribution: "Esri" }
@@ -181,7 +198,7 @@ async function geocodeCity(city) {
     }
   }
 
-  return [48.0196, 66.9237]; // центр Казахстана
+  return [48.0196, 66.9237];
 }
 
 // ===== ЗАГРУЗКА ДАННЫХ ИЗ FIREBASE =====
@@ -214,7 +231,7 @@ if (userId) {
         `${h}ч ${m}м ${s}с`;
     }, 1000);
 
-    // Строим маршрут по дорогам
+    // Строим маршрут
     const fromCoords = await geocodeCity(d.from);
     const toCoords = await geocodeCity(d.to);
 
@@ -265,7 +282,7 @@ if (isAdmin) {
   document.getElementById("admin").style.display = "block";
 }
 
-// ===== СОХРАНЕНИЕ ИЗ АДМИНКИ =====
+// ===== СОХРАНЕНИЕ ИЗ АДМИНКИ (НОВАЯ ВЕРСИЯ) =====
 window.saveUser = async function() {
   const id = uid.value.trim();
   const name = uname.value.trim();
@@ -290,7 +307,31 @@ window.saveUser = async function() {
   const link =
     location.origin + location.pathname + "?user=" + encodeURIComponent(id);
 
-  alert("Сохранено!\nСсылка для клиента:\n\n" + link);
+  // Показываем ссылку в админке
+  document.getElementById("clientLink").innerText = link;
+  document.getElementById("clientLinkBox").style.display = "block";
+
+  // Пробуем скопировать автоматически
+  try {
+    await navigator.clipboard.writeText(link);
+    alert("Сохранено! ✅\nСсылка скопирована.");
+  } catch (e) {
+    alert("Сохранено! ✅\nНажми кнопку 'Копировать ссылку'.");
+  }
+};
+
+// Кнопка копирования (100% рабочий вариант)
+window.copyLink = function() {
+  const text = document.getElementById("clientLink").innerText;
+
+  const temp = document.createElement("textarea");
+  temp.value = text;
+  document.body.appendChild(temp);
+  temp.select();
+  document.execCommand("copy");
+  document.body.removeChild(temp);
+
+  alert("Ссылка скопирована!");
 };
 </script>
 
