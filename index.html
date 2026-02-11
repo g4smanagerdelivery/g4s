@@ -107,7 +107,6 @@ body {
 
       <button onclick="saveUser()">Сохранить</button>
 
-      <!-- Здесь появится ссылка -->
       <div id="clientLinkBox">
         <b>Ссылка для клиента:</b><br>
         <span id="clientLink"></span><br><br>
@@ -122,7 +121,7 @@ body {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
@@ -201,7 +200,7 @@ async function geocodeCity(city) {
   return [48.0196, 66.9237];
 }
 
-// ===== ЗАГРУЗКА ДАННЫХ ИЗ FIREBASE =====
+// ===== ЗАГРУЗКА И СИНХРОНИЗАЦИЯ =====
 if (userId) {
   const ref = doc(db, "investors", userId);
 
@@ -219,6 +218,7 @@ if (userId) {
     document.getElementById("infoText").innerText = d.info || "—";
 
     const endTime = new Date(d.endTime);
+    const startTime = new Date(d.startTime); // <-- ВАЖНО: теперь берём из Firebase
 
     // Таймер
     setInterval(() => {
@@ -255,16 +255,16 @@ if (userId) {
       carMarker.setLatLng(coords[0]);
       carMarker.addTo(map);
 
-      let startTime = Date.now();
-      let totalMs = endTime - startTime;
+      const totalMs = endTime - startTime;
 
       function animate() {
-        let elapsed = Date.now() - startTime;
+        const elapsed = new Date() - startTime;
         let progress = elapsed / totalMs;
 
         if (progress > 1) progress = 1;
+        if (progress < 0) progress = 0;
 
-        let index = Math.floor(progress * (coords.length - 1));
+        const index = Math.floor(progress * (coords.length - 1));
         carMarker.setLatLng(coords[index]);
 
         if (progress < 1) {
@@ -282,7 +282,7 @@ if (isAdmin) {
   document.getElementById("admin").style.display = "block";
 }
 
-// ===== СОХРАНЕНИЕ ИЗ АДМИНКИ (НОВАЯ ВЕРСИЯ) =====
+// ===== СОХРАНЕНИЕ (ВАЖНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ) =====
 window.saveUser = async function() {
   const id = uid.value.trim();
   const name = uname.value.trim();
@@ -296,22 +296,22 @@ window.saveUser = async function() {
     return;
   }
 
+  const link =
+    location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+
+  // ВАЖНО: сохраняем startTime ОДИН РАЗ
   await setDoc(doc(db, "investors", id), {
     name,
     from,
     to,
     endTime: new Date(t).toISOString(),
+    startTime: serverTimestamp(), // <-- СИНХРОНИЗАЦИЯ ДЛЯ ВСЕХ УСТРОЙСТВ
     info: info || "—"
   });
 
-  const link =
-    location.origin + location.pathname + "?user=" + encodeURIComponent(id);
-
-  // Показываем ссылку в админке
   document.getElementById("clientLink").innerText = link;
   document.getElementById("clientLinkBox").style.display = "block";
 
-  // Пробуем скопировать автоматически
   try {
     await navigator.clipboard.writeText(link);
     alert("Сохранено! ✅\nСсылка скопирована.");
@@ -320,7 +320,7 @@ window.saveUser = async function() {
   }
 };
 
-// Кнопка копирования (100% рабочий вариант)
+// Кнопка копирования
 window.copyLink = function() {
   const text = document.getElementById("clientLink").innerText;
 
