@@ -87,7 +87,7 @@
     <h3>Получатель:</h3>
     <p id="clientName">Загрузка…</p>
 
-    <h3>Время прибытия:</h3>
+    <h3>Время прибытия / Выезд:</h3>
     <p id="eta">--:--:--</p>
 
     <h3>Маршрут:</h3>
@@ -102,7 +102,7 @@
 
       <input id="uid" placeholder="ID клиента (например: Tuman)">
       <input id="uname" placeholder="ФИО">
-      <input type="datetime-local" id="endInput">
+      <input type="datetime-local" id="endInput" placeholder="Время прибытия">
       <input type="datetime-local" id="departureInput" placeholder="Время выезда">
       <input id="fromInput" placeholder="Откуда (город)">
       <input id="toInput" placeholder="Куда (город)">
@@ -148,261 +148,174 @@ const params = new URLSearchParams(location.search);
 const userId = decodeURIComponent(params.get("user") || "");
 
 // ===== КАРТА =====
-const map = L.map("map", {
-  zoomControl: false,
-  attributionControl: false
-}).setView([48.0196, 66.9237], 5);
-
-L.tileLayer(
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-  { attribution: "Esri" }
-).addTo(map);
+const map = L.map("map", { zoomControl: false, attributionControl: false }).setView([48.0196, 66.9237], 5);
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", { attribution: "Esri" }).addTo(map);
 
 // ===== ИКОНКА МАШИНЫ =====
-const carIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
-  iconSize: [40, 40],
-  iconAnchor: [20, 20]
-});
-
-let carMarker = L.marker([48.0196, 66.9237], { icon: carIcon }).addTo(map);
+const carIcon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png", iconSize:[40,40], iconAnchor:[20,20] });
+let carMarker = L.marker([48.0196,66.9237],{icon:carIcon}).addTo(map);
 let routeLine = null;
 let routeCoords = [];
 let router = null;
 let lastFrom = null;
 let lastTo = null;
 
-let animateFrame = null; // для requestAnimationFrame
-let progressInterval = null; // для setInterval
+let animateFrame = null;
+let progressInterval = null;
+let departureInterval = null;
 
-// ===== ГЕОКОДИНГ ГОРОДА =====
-async function geocodeCity(city) { 
-  const url = 
-    "https://nominatim.openstreetmap.org/search?format=json&q=" + 
-    encodeURIComponent(city + ", Kazakhstan");
-
+// ===== ГЕОКОДИНГ =====
+async function geocodeCity(city) {
+  const url = "https://nominatim.openstreetmap.org/search?format=json&q="+encodeURIComponent(city+", Kazakhstan");
   const res = await fetch(url);
   const data = await res.json();
-
-  if (data && data.length > 0) {
-    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-  }
-
-  return [48.0196, 66.9237];
+  return (data && data.length>0)? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : [48.0196,66.9237];
 }
 
-// ===== ПЕРЕСТРОИТЬ МАРШРУТ =====
-async function buildRoute(from, to) {
-  if (routeLine) {
-    map.removeLayer(routeLine);
-    routeLine = null;
-  }
-  if (router) {
-    map.removeControl(router);
-    router = null;
-  }
+// ===== ПОСТРОЕНИЕ МАРШРУТА =====
+async function buildRoute(from,to){
+  if(routeLine){ map.removeLayer(routeLine); routeLine=null;}
+  if(router){ map.removeControl(router); router=null;}
+  routeCoords=[];
 
-  routeCoords = [];
-
-  let fromCoords;
-  if (!from || from.trim() === "") {
-    const currentPos = carMarker.getLatLng();
-    fromCoords = [currentPos.lat, currentPos.lng];
-  } else {
-    fromCoords = await geocodeCity(from);
-  }
-
+  let fromCoords = (!from||from.trim()==="")? [carMarker.getLatLng().lat,carMarker.getLatLng().lng] : await geocodeCity(from);
   const toCoords = await geocodeCity(to);
 
   router = L.Routing.control({
-    waypoints: [
-      L.latLng(fromCoords[0], fromCoords[1]),
-      L.latLng(toCoords[0], toCoords[1])
-    ],
-    router: L.Routing.osrmv1({
-      serviceUrl: "https://router.project-osrm.org/route/v1"
-    }),
-    addWaypoints: false,
-    draggableWaypoints: false,
-    fitSelectedRoutes: true
+    waypoints:[L.latLng(fromCoords[0],fromCoords[1]), L.latLng(toCoords[0],toCoords[1])],
+    router:L.Routing.osrmv1({serviceUrl:"https://router.project-osrm.org/route/v1"}),
+    addWaypoints:false,
+    draggableWaypoints:false,
+    fitSelectedRoutes:true
   }).addTo(map);
 
-  router.on("routesfound", function(e) {
+  router.on("routesfound", function(e){
     const route = e.routes[0];
     routeCoords = route.coordinates;
-
-    routeLine = L.polyline(routeCoords, {
-      color: "blue",
-      weight: 5
-    }).addTo(map);
-
+    routeLine = L.polyline(routeCoords,{color:"blue",weight:5}).addTo(map);
     map.fitBounds(routeLine.getBounds());
-
-    if (!from || from.trim() === "") {
-      setTimeout(() => {
-        if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
-        if (router) { map.removeControl(router); router = null; }
-        if (carMarker) { map.removeLayer(carMarker); }
-        routeCoords = [];
-        document.getElementById("progress-fill").style.width = "0%";
-        document.getElementById("progress-text").innerText = "Пройдено: 0%";
-        document.getElementById("eta").innerText = "--:--:--";
-        if (progressInterval) clearInterval(progressInterval);
-        if (animateFrame) cancelAnimationFrame(animateFrame);
-      }, 60000);
-    }
   });
+
+  return fromCoords;
 }
 
-// ===== КЛИЕНТСКАЯ ЧАСТЬ С ВРЕМЕНЕМ ВЫЕЗДА =====
-if (userId) {
-  const ref = doc(db, "investors", userId);
+// ===== КЛИЕНТСКАЯ ЧАСТЬ С ТАЙМЕРОМ ВЫЕЗДА =====
+if(userId){
+  const ref = doc(db,"investors",userId);
 
-  onSnapshot(ref, async (snap) => {
-    if (!snap.exists()) return;
-
+  onSnapshot(ref,async(snap)=>{
+    if(!snap.exists()) return;
     const d = snap.data();
 
-    document.getElementById("clientName").innerText = d.name;
-    document.getElementById("fromCity").innerText = d.from;
-    document.getElementById("toCity").innerText = d.to;
+    document.getElementById("clientName").innerText=d.name;
+    document.getElementById("fromCity").innerText=d.from;
+    document.getElementById("toCity").innerText=d.to;
 
     let infoText = d.info || "—";
-    if (infoText.toLowerCase().includes("отмена!")) {
-      infoText = infoText.replace(/отмена!/gi, 
-        '<span class="cancel-blink">ОТМЕНА!</span>');
-    }
-    infoText = infoText.replace(/\n/g, "<br>");
-    document.getElementById("infoText").innerHTML = infoText;
+    if(infoText.toLowerCase().includes("отмена!")) infoText=infoText.replace(/отмена!/gi,'<span class="cancel-blink">ОТМЕНА!</span>');
+    infoText = infoText.replace(/\n/g,"<br>");
+    document.getElementById("infoText").innerHTML=infoText;
 
-    const startTime = d.startTime?.toDate
-      ? d.startTime.toDate()
-      : new Date(d.startTime);
+    const startTime = d.startTime?.toDate ? d.startTime.toDate() : new Date(d.startTime);
     const endTime = new Date(d.endTime);
+    const departureTime = d.departureTime ? new Date(d.departureTime) : startTime;
 
-    const departureTime = d.departureTime
-      ? new Date(d.departureTime)
-      : startTime;
+    // Построение маршрута и установка машины на старт
+    const fromCoords = await buildRoute(d.from,d.to);
+    carMarker.setLatLng(fromCoords);
 
-    if (d.from !== lastFrom || d.to !== lastTo) {
-      lastFrom = d.from;
-      lastTo = d.to;
-      await buildRoute(d.from, d.to);
-    }
+    // Таймер до выезда
+    if(departureInterval) clearInterval(departureInterval);
+    departureInterval=setInterval(()=>{
+      const now = new Date();
+      const diff = departureTime - now;
+      if(diff<=0){ clearInterval(departureInterval); startMovement(); return; }
+      const h=Math.floor(diff/36e5);
+      const m=Math.floor(diff%36e5/6e4);
+      const s=Math.floor(diff%6e4/1000);
+      document.getElementById("eta").innerText=`Выезд через ${h}ч ${m}м ${s}с`;
+      document.getElementById("progress-fill").style.width="0%";
+      document.getElementById("progress-text").innerText="Прогресс пока нет";
+    },500);
 
-    // ===== Функция для старта машины =====
-    function startMovement() {
-      if (progressInterval) clearInterval(progressInterval);
-      progressInterval = setInterval(() => {
-        const now = new Date();
-        const total = endTime - startTime;
-        const passed = now - startTime;
-        let progress = Math.min(1, Math.max(0, passed / total));
+    // ===== Старт движения машины =====
+    function startMovement(){
+      if(departureInterval) clearInterval(departureInterval);
 
-        const diff = Math.max(0, endTime - now);
-        const h = Math.floor(diff / 36e5);
-        const m = Math.floor(diff % 36e5 / 6e4);
-        const s = Math.floor(diff % 6e4 / 1000);
+      if(progressInterval) clearInterval(progressInterval);
+      progressInterval=setInterval(()=>{
+        const now=new Date();
+        const total=endTime-startTime;
+        const passed=now-startTime;
+        let progress=Math.min(1,Math.max(0,passed/total));
 
-        document.getElementById("eta").innerText =
-          `${h}ч ${m}м ${s}с`;
+        const diff=Math.max(0,endTime-now);
+        const h=Math.floor(diff/36e5);
+        const m=Math.floor(diff%36e5/6e4);
+        const s=Math.floor(diff%6e4/1000);
+        document.getElementById("eta").innerText=`${h}ч ${m}м ${s}с`;
 
-        const percent = Math.round(progress * 100);
-        document.getElementById("progress-fill").style.width = percent + "%";
-        document.getElementById("progress-text").innerText =
-          `Пройдено: ${percent}%`;
-      }, 1000);
+        const percent=Math.round(progress*100);
+        document.getElementById("progress-fill").style.width=percent+"%";
+        document.getElementById("progress-text").innerText=`Пройдено: ${percent}%`;
+      },1000);
 
-      function animateCar() {
-        if (!routeCoords || routeCoords.length === 0) {
-          animateFrame = requestAnimationFrame(animateCar);
-          return;
-        }
-
-        const totalMs = endTime - startTime;
-        const elapsed = new Date() - startTime;
-        let progress = elapsed / totalMs;
-        progress = Math.max(0, Math.min(1, progress));
-
-        const index = Math.floor(progress * (routeCoords.length - 1));
-        const pos = routeCoords[index];
-
-        carMarker.setLatLng([pos.lat, pos.lng]);
-
-        animateFrame = requestAnimationFrame(animateCar);
+      function animateCar(){
+        if(!routeCoords || routeCoords.length===0){ animateFrame=requestAnimationFrame(animateCar); return; }
+        const totalMs=endTime-startTime;
+        const elapsed=new Date()-startTime;
+        let progress=elapsed/totalMs;
+        progress=Math.max(0,Math.min(1,progress));
+        const index=Math.floor(progress*(routeCoords.length-1));
+        const pos=routeCoords[index];
+        carMarker.setLatLng([pos.lat,pos.lng]);
+        animateFrame=requestAnimationFrame(animateCar);
       }
-
       animateCar();
     }
 
-    function waitForDeparture() {
-      const now = new Date();
-      if (now >= departureTime) {
-        startMovement();
-      } else {
-        const delay = departureTime - now;
-        setTimeout(startMovement, delay);
-      }
-    }
-
-    waitForDeparture();
   });
 }
 
 // ===== АДМИН-ПАНЕЛЬ =====
-if (params.get("admin") === "true") {
-  const p = prompt("Введите пароль администратора");
-  if (p === "123456") {
-    document.getElementById("admin").style.display = "block";
-  } else {
-    alert("Неверный пароль");
-  }
+if(params.get("admin")==="true"){
+  const p=prompt("Введите пароль администратора");
+  if(p==="123456") document.getElementById("admin").style.display="block";
+  else alert("Неверный пароль");
 }
 
-window.saveUser = async function() {
-  const id = uid.value.trim();
-  const name = uname.value.trim();
-  const t = endInput.value;
-  const departure = departureInput.value;
-  const from = fromInput.value.trim();
-  const to = toInput.value.trim();
-  const info = uinfo.value;
+window.saveUser=async function(){
+  const id=uid.value.trim();
+  const name=uname.value.trim();
+  const t=endInput.value;
+  const departure=departureInput.value;
+  const from=fromInput.value.trim();
+  const to=toInput.value.trim();
+  const info=uinfo.value;
 
-  if (!id || !name || !t || !to) {
-    alert("Заполни все обязательные поля");
-    return;
-  }
+  if(!id||!name||!t||!to){ alert("Заполни все обязательные поля"); return; }
 
-  const link =
-    location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+  const link=location.origin+location.pathname+"?user="+encodeURIComponent(id);
 
-  await setDoc(doc(db, "investors", id), {
+  await setDoc(doc(db,"investors",id),{
     name,
     from,
     to,
-    endTime: new Date(t).toISOString(),
-    departureTime: departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
-    startTime: serverTimestamp(),
-    info: info || "—"
+    endTime:new Date(t).toISOString(),
+    departureTime:departure? new Date(departure).toISOString():new Date(t).toISOString(),
+    startTime:serverTimestamp(),
+    info:info||"—"
   });
 
-  document.getElementById("clientLink").innerText = link;
-  document.getElementById("clientLinkBox").style.display = "block";
+  document.getElementById("clientLink").innerText=link;
+  document.getElementById("clientLinkBox").style.display="block";
 
-  try {
-    await navigator.clipboard.writeText(link);
-    alert("Сохранено! Ссылка скопирована.");
-  } catch {
-    alert("Сохранено! Нажми кнопку 'Копировать'.");
-  }
+  try{ await navigator.clipboard.writeText(link); alert("Сохранено! Ссылка скопирована."); }
+  catch{ alert("Сохранено! Нажми кнопку 'Копировать'."); }
 };
 
-window.copyLink = function() {
-  const text = document.getElementById("clientLink").innerText;
-  navigator.clipboard.writeText(text);
-  alert("Ссылка скопирована!");
-};
+window.copyLink=function(){ const text=document.getElementById("clientLink").innerText; navigator.clipboard.writeText(text); alert("Ссылка скопирована!"); };
+
 </script>
-
 </body>
 </html>
