@@ -272,6 +272,8 @@ if (userId) {
       infoText = infoText.replace(/отмена!/gi, 
         '<span class="cancel-blink">ОТМЕНА!</span>');
     }
+    // переносы строки
+infoText = infoText.replace(/\n/g, "<br>");
     document.getElementById("infoText").innerHTML = infoText;
 
     const endTime = new Date(d.endTime);
@@ -378,8 +380,6 @@ window.saveUser = async function() {
 };
 
 window.copyLink = function() {
-  // переносы строки
-infoText = infoText.replace(/\n/g, "<br>");
   const text = document.getElementById("clientLink").innerText;
   navigator.clipboard.writeText(text);
   alert("Ссылка скопирована!");
@@ -388,4 +388,5 @@ infoText = infoText.replace(/\n/g, "<br>");
 
 </body>
 </html>
+
 
