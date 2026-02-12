@@ -378,6 +378,8 @@ window.saveUser = async function() {
 };
 
 window.copyLink = function() {
+  // переносы строки
+infoText = infoText.replace(/\n/g, "<br>");
   const text = document.getElementById("clientLink").innerText;
   navigator.clipboard.writeText(text);
   alert("Ссылка скопирована!");
@@ -386,3 +388,4 @@ window.copyLink = function() {
 
 </body>
 </html>
+
