@@ -175,23 +175,10 @@ let animateFrame = null; // для requestAnimationFrame
 let progressInterval = null; // для setInterval
 
 // ===== ГЕОКОДИНГ ГОРОДА =====
-async function geocodeCity(city) {
-  const url =
-    "https://nominatim.openstreetmap.org/search?format=json&q=" +
-    encodeURIComponent(city);
-
-  const response = await fetch(url);
-  const data = await response.json();
-
-  if (data.length > 0) {
-    return {
-      lat: parseFloat(data[0].lat),
-      lon: parseFloat(data[0].lon)
-    };
-  } else {
-    return null;
-  }
-}
+async function geocodeCity(city) { 
+  const url = 
+    "https://nominatim.openstreetmap.org/search?format=json&q=" + 
+    encodeURIComponent(city + ", Kazakhstan");
 
   const res = await fetch(url);
   const data = await res.json();
@@ -401,6 +388,7 @@ window.copyLink = function() {
 
 </body>
 </html>
+
 
 
 
