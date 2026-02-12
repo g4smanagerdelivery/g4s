@@ -178,7 +178,20 @@ let progressInterval = null; // для setInterval
 async function geocodeCity(city) {
   const url =
     "https://nominatim.openstreetmap.org/search?format=json&q=" +
-    encodeURIComponent(city + ", Kazakhstan");
+    encodeURIComponent(city);
+
+  const response = await fetch(url);
+  const data = await response.json();
+
+  if (data.length > 0) {
+    return {
+      lat: parseFloat(data[0].lat),
+      lon: parseFloat(data[0].lon)
+    };
+  } else {
+    return null;
+  }
+}
 
   const res = await fetch(url);
   const data = await res.json();
@@ -388,5 +401,6 @@ window.copyLink = function() {
 
 </body>
 </html>
+
 
 
