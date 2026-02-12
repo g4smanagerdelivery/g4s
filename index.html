@@ -153,9 +153,9 @@ L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map
 
 // ===== ИКОНКА МАШИНЫ =====
 const carIcon = L.icon({
-  iconUrl: "https://upload.wikimedia.org/wikipedia/commons/1/19/Armoured_truck_icon.png", // реально рабочий PNG
-  iconSize: [50, 50],
-  iconAnchor: [25, 25]
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/8879/8879708.png", // инкассаторский грузовик
+  iconSize: [50, 50],      // размер иконки (можно подогнать)
+  iconAnchor: [25, 25]     // центр иконки привязан к координатам
 });
 
 let carMarker = L.marker([48.0196, 66.9237], { icon: carIcon }).addTo(map);
@@ -327,6 +327,7 @@ window.copyLink = function () { const text = document.getElementById("clientLink
 </script>
 </body>
 </html>
+
 
 
 
