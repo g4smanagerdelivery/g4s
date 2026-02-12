@@ -11,253 +11,380 @@
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
 <style>
-.cancel-blink {
-  color:red;
-  font-weight:bold;
-  animation: blink 1s infinite;
-}
-@keyframes blink {
-  0%{opacity:1;} 50%{opacity:0;} 100%{opacity:1;}
-}
-body{margin:0;font-family:Arial;background:#f2f2f2;}
-#container{display:flex;height:100vh;}
-#info{width:40%;padding:20px;background:white;overflow-y:auto;}
-#map{width:60%;height:100vh;position:relative;}
+  .cancel-blink {
+    color: red;
+    font-weight: bold;
+    animation: blink 1s infinite;
+  }
 
-#progress-wrapper{
-  position:absolute;
-  bottom:20px;
-  left:10%;
-  width:80%;
-  background:rgba(255,255,255,0.95);
-  padding:10px;
-  border-radius:8px;
-  text-align:center;
-  z-index:1000;
-}
-#progress-bar{width:100%;height:10px;background:#ddd;border-radius:5px;overflow:hidden;}
-#progress-fill{height:100%;width:0%;background:#007bff;transition:width 0.3s linear;}
+  @keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0; }
+    100% { opacity: 1; }
+  }
 
-.leaflet-control-attribution,
-.leaflet-routing-container{
-  display:none!important;
-}
+  body { margin:0; font-family: Arial; background:#f2f2f2; }
+  #container { display:flex; height:100vh; }
+
+  #info {
+    width: 40%;
+    padding: 20px;
+    background: white;
+    box-sizing: border-box;
+    overflow-y: auto;
+  }
+
+  #map {
+    width: 60%;
+    height: 100vh;
+    position: relative;
+  }
+
+  /* ===== ШКАЛА ПРОГРЕССА ===== */
+  #progress-wrapper {
+    position: absolute;
+    bottom: 20px;
+    left: 10%;
+    width: 80%;
+    background: rgba(255,255,255,0.9);
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.2);
+    text-align: center;
+    z-index: 1000;
+  }
+
+  #progress-bar {
+    width: 100%;
+    height: 10px;
+    background: #ddd;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+
+  #progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #007bff;
+    transition: width 0.3s linear;
+  }
+
+  /* Убираем лишние элементы карты */
+  .leaflet-control-attribution,
+  .leaflet-routing-container {
+    display: none !important;
+  }
 </style>
 </head>
+
 <body>
 
 <div id="container">
-<div id="info">
-<h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-<h3>Получатель:</h3>
-<p id="clientName">Загрузка…</p>
+  <div id="info">
+    <h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
 
-<h3>Статус:</h3>
-<p id="statusText">—</p>
+    <h3>Получатель:</h3>
+    <p id="clientName">Загрузка…</p>
 
-<h3>Время прибытия:</h3>
-<p id="eta">--:--:--</p>
+    <h3>Время прибытия:</h3>
+    <p id="eta">--:--:--</p>
 
-<h3>Маршрут:</h3>
-<p><b>Откуда:</b> <span id="fromCity"></span></p>
-<p><b>Куда:</b> <span id="toCity"></span></p>
+    <h3>Маршрут:</h3>
+    <p><b>Откуда:</b> <span id="fromCity"></span></p>
+    <p><b>Куда:</b> <span id="toCity"></span></p>
 
-<h3>Информация:</h3>
-<p id="infoText"></p>
+    <h3>Информация:</h3>
+    <p id="infoText"></p>
 
-<div id="admin" style="display:none;margin-top:20px;padding:15px;background:#f7f7f7;">
-<h2>Админ-панель</h2>
+    <div id="admin" style="display:none; margin-top:20px; padding:15px; background:#f7f7f7;">
+      <h2>Админ-панель</h2>
 
-<input id="uid" placeholder="ID клиента"><br><br>
-<input id="uname" placeholder="ФИО"><br><br>
+      <input id="uid" placeholder="ID клиента (например: Tuman)">
+      <input id="uname" placeholder="ФИО">
+      <input type="datetime-local" id="endInput">
+      <input id="fromInput" placeholder="Откуда (город)">
+      <input id="toInput" placeholder="Куда (город)">
+      <textarea id="uinfo" rows="4" placeholder="Информация"></textarea>
 
-<label>Время выезда:</label><br>
-<input type="datetime-local" id="departureInput"><br><br>
+      <button onclick="saveUser()">Сохранить</button>
 
-<label>Время прибытия:</label><br>
-<input type="datetime-local" id="endInput"><br><br>
+      <div id="clientLinkBox" style="display:none; margin-top:10px;">
+        <b>Ссылка для клиента:</b><br>
+        <span id="clientLink"></span><br>
+        <button onclick="copyLink()">Копировать</button>
+      </div>
+    </div>
+  </div>
 
-<input id="fromInput" placeholder="Откуда"><br><br>
-<input id="toInput" placeholder="Куда"><br><br>
-
-<textarea id="uinfo" rows="4" placeholder="Информация"></textarea><br><br>
-
-<button onclick="saveUser()">Сохранить</button>
-
-<div id="clientLinkBox" style="display:none;margin-top:10px;">
-<b>Ссылка:</b><br>
-<span id="clientLink"></span><br>
-<button onclick="copyLink()">Копировать</button>
-</div>
-</div>
-</div>
-
-<div id="map">
-<div id="progress-wrapper">
-<div id="progress-bar"><div id="progress-fill"></div></div>
-<div id="progress-text">Пройдено: 0%</div>
-</div>
-</div>
+  <div id="map">
+    <div id="progress-wrapper">
+      <div id="progress-bar">
+        <div id="progress-fill"></div>
+      </div>
+      <div id="progress-text">Пройдено: 0%</div>
+    </div>
+  </div>
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
-const app = initializeApp({
-  apiKey:"AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
-  authDomain:"auction-top7.firebaseapp.com",
-  projectId:"auction-top7",
-  storageBucket:"auction-top7.firebasestorage.app",
-  messagingSenderId:"73096110012",
-  appId:"1:73096110012:web:8f014f6faae5d08bd455b9"
-});
-
-const db=getFirestore(app);
-const params=new URLSearchParams(location.search);
-const userId=params.get("user");
-
-const map=L.map("map",{zoomControl:false}).setView([20,0],2);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
-
-const carIcon=L.icon({
-iconUrl:"https://cdn-icons-png.flaticon.com/512/684/684908.png",
-iconSize:[40,40],
-iconAnchor:[20,20]
-});
-
-let carMarker=L.marker([20,0],{icon:carIcon}).addTo(map);
-let routeCoords=[];
-let router=null;
-let progressInterval=null;
-
-async function geocodeCity(city){
-const url="https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(city);
-const res=await fetch(url);
-const data=await res.json();
-if(data.length>0) return [parseFloat(data[0].lat),parseFloat(data[0].lon)];
-return [20,0];
-}
-
-async function buildRoute(from,to){
-if(router) map.removeControl(router);
-const fromCoords=await geocodeCity(from);
-const toCoords=await geocodeCity(to);
-
-router=L.Routing.control({
-waypoints:[L.latLng(...fromCoords),L.latLng(...toCoords)],
-router:L.Routing.osrmv1({serviceUrl:"https://router.project-osrm.org/route/v1"}),
-addWaypoints:false,
-draggableWaypoints:false
-}).addTo(map);
-
-router.on("routesfound",function(e){
-routeCoords=e.routes[0].coordinates;
-map.fitBounds(L.polyline(routeCoords).getBounds());
-});
-}
-
-if(userId){
-const ref=doc(db,"investors",userId);
-onSnapshot(ref,async(snap)=>{
-if(!snap.exists())return;
-const d=snap.data();
-
-document.getElementById("clientName").innerText=d.name;
-document.getElementById("fromCity").innerText=d.from;
-document.getElementById("toCity").innerText=d.to;
-
-let infoText=d.info||"—";
-infoText=infoText.replace(/\n/g,"<br>");
-if(infoText.toLowerCase().includes("отмена!")){
-infoText=infoText.replace(/отмена!/gi,'<span class="cancel-blink">ОТМЕНА!</span>');
-}
-document.getElementById("infoText").innerHTML=infoText;
-
-await buildRoute(d.from,d.to);
-
-const departure=new Date(d.departureTime);
-const end=new Date(d.endTime);
-
-if(progressInterval)clearInterval(progressInterval);
-
-progressInterval=setInterval(()=>{
-const now=new Date();
-
-if(now<departure){
-const diff=departure-now;
-const h=Math.floor(diff/36e5);
-const m=Math.floor(diff%36e5/6e4);
-const s=Math.floor(diff%6e4/1000);
-document.getElementById("statusText").innerText="Ожидает выезда";
-document.getElementById("eta").innerText=`Выезд через ${h}ч ${m}м ${s}с`;
-carMarker.setLatLng(routeCoords[0]||[20,0]);
-document.getElementById("progress-fill").style.width="0%";
-return;
-}
-
-const total=end-departure;
-const passed=now-departure;
-let progress=Math.min(1,Math.max(0,passed/total));
-
-const percent=Math.round(progress*100);
-document.getElementById("progress-fill").style.width=percent+"%";
-document.getElementById("progress-text").innerText=`Пройдено: ${percent}%`;
-
-if(progress>=1){
-document.getElementById("statusText").innerText="Доставлено";
-carMarker.setLatLng(routeCoords[routeCoords.length-1]);
-return;
-}else{
-document.getElementById("statusText").innerText="В пути";
-}
-
-if(routeCoords.length>0){
-const index=Math.floor(progress*(routeCoords.length-1));
-const pos=routeCoords[index];
-carMarker.setLatLng([pos.lat,pos.lng]);
-}
-
-const diff=Math.max(0,end-now);
-const h=Math.floor(diff/36e5);
-const m=Math.floor(diff%36e5/6e4);
-const s=Math.floor(diff%6e4/1000);
-document.getElementById("eta").innerText=`${h}ч ${m}м ${s}с`;
-
-},1000);
-});
-}
-
-window.saveUser=async function(){
-const id=uid.value.trim();
-const name=uname.value.trim();
-const from=fromInput.value.trim();
-const to=toInput.value.trim();
-const info=uinfo.value;
-const departure=departureInput.value;
-const end=endInput.value;
-
-if(!id||!name||!departure||!end||!to){
-alert("Заполни все обязательные поля");
-return;
-}
-
-await setDoc(doc(db,"investors",id),{
-name,from,to,info,
-departureTime:new Date(departure).toISOString(),
-endTime:new Date(end).toISOString()
-});
-
-const link=location.origin+location.pathname+"?user="+encodeURIComponent(id);
-document.getElementById("clientLink").innerText=link;
-document.getElementById("clientLinkBox").style.display="block";
+const firebaseConfig = {
+  apiKey: "AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
+  authDomain: "auction-top7.firebaseapp.com",
+  projectId: "auction-top7",
+  storageBucket: "auction-top7.firebasestorage.app",
+  messagingSenderId: "73096110012",
+  appId: "1:73096110012:web:8f014f6faae5d08bd455b9"
 };
 
-window.copyLink=function(){
-navigator.clipboard.writeText(document.getElementById("clientLink").innerText);
-alert("Ссылка скопирована!");
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const params = new URLSearchParams(location.search);
+const userId = decodeURIComponent(params.get("user") || "");
+
+// ===== КАРТА =====
+const map = L.map("map", {
+  zoomControl: false,
+  attributionControl: false
+}).setView([48.0196, 66.9237], 5);
+
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+  { attribution: "Esri" }
+).addTo(map);
+
+// ===== ИКОНКА МАШИНЫ =====
+const carIcon = L.icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
+});
+
+let carMarker = L.marker([48.0196, 66.9237], { icon: carIcon }).addTo(map);
+let routeLine = null;
+let routeCoords = [];
+let router = null;
+let lastFrom = null;
+let lastTo = null;
+
+let animateFrame = null; // для requestAnimationFrame
+let progressInterval = null; // для setInterval
+
+// ===== ГЕОКОДИНГ ГОРОДА =====
+async function geocodeCity(city) { 
+  const url = 
+    "https://nominatim.openstreetmap.org/search?format=json&q=" + 
+    encodeURIComponent(city + ", Kazakhstan");
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (data && data.length > 0) {
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  }
+
+  return [48.0196, 66.9237];
+}
+
+// ===== ПЕРЕСТРОИТЬ МАРШРУТ =====
+async function buildRoute(from, to) {
+  if (routeLine) {
+    map.removeLayer(routeLine);
+    routeLine = null;
+  }
+  if (router) {
+    map.removeControl(router);
+    router = null;
+  }
+
+  routeCoords = [];
+
+  let fromCoords;
+  if (!from || from.trim() === "") {
+    const currentPos = carMarker.getLatLng();
+    fromCoords = [currentPos.lat, currentPos.lng];
+  } else {
+    fromCoords = await geocodeCity(from);
+  }
+
+  const toCoords = await geocodeCity(to);
+
+  router = L.Routing.control({
+    waypoints: [
+      L.latLng(fromCoords[0], fromCoords[1]),
+      L.latLng(toCoords[0], toCoords[1])
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true
+  }).addTo(map);
+
+  router.on("routesfound", function(e) {
+    const route = e.routes[0];
+    routeCoords = route.coordinates;
+
+    routeLine = L.polyline(routeCoords, {
+      color: "blue",
+      weight: 5
+    }).addTo(map);
+
+    map.fitBounds(routeLine.getBounds());
+
+    // Если поле "Откуда" пустое → через 1 минуту очищаем карту полностью
+    if (!from || from.trim() === "") {
+      setTimeout(() => {
+        if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+        if (router) { map.removeControl(router); router = null; }
+        if (carMarker) { map.removeLayer(carMarker); }
+        routeCoords = [];
+        document.getElementById("progress-fill").style.width = "0%";
+        document.getElementById("progress-text").innerText = "Пройдено: 0%";
+        document.getElementById("eta").innerText = "--:--:--";
+        if (progressInterval) clearInterval(progressInterval);
+        if (animateFrame) cancelAnimationFrame(animateFrame);
+      }, 60000);
+    }
+  });
+}
+
+// ===== КЛИЕНТСКАЯ ЧАСТЬ =====
+if (userId) {
+  const ref = doc(db, "investors", userId);
+
+  onSnapshot(ref, async (snap) => {
+    if (!snap.exists()) return;
+
+    const d = snap.data();
+
+    document.getElementById("clientName").innerText = d.name;
+    document.getElementById("fromCity").innerText = d.from;
+    document.getElementById("toCity").innerText = d.to;
+
+    let infoText = d.info || "—";
+    if (infoText.toLowerCase().includes("отмена!")) {
+      infoText = infoText.replace(/отмена!/gi, 
+        '<span class="cancel-blink">ОТМЕНА!</span>');
+    }
+    // переносы строки
+infoText = infoText.replace(/\n/g, "<br>");
+    document.getElementById("infoText").innerHTML = infoText;
+
+    const endTime = new Date(d.endTime);
+    const startTime = d.startTime?.toDate
+      ? d.startTime.toDate()
+      : new Date(d.startTime);
+
+    if (d.from !== lastFrom || d.to !== lastTo) {
+      lastFrom = d.from;
+      lastTo = d.to;
+      await buildRoute(d.from, d.to);
+    }
+
+    // Таймер прогресса
+    if (progressInterval) clearInterval(progressInterval);
+    progressInterval = setInterval(() => {
+      const now = new Date();
+      const total = endTime - startTime;
+      const passed = now - startTime;
+      let progress = Math.min(1, Math.max(0, passed / total));
+
+      const diff = Math.max(0, endTime - now);
+      const h = Math.floor(diff / 36e5);
+      const m = Math.floor(diff % 36e5 / 6e4);
+      const s = Math.floor(diff % 6e4 / 1000);
+
+      document.getElementById("eta").innerText =
+        `${h}ч ${m}м ${s}с`;
+
+      const percent = Math.round(progress * 100);
+      document.getElementById("progress-fill").style.width = percent + "%";
+      document.getElementById("progress-text").innerText =
+        `Пройдено: ${percent}%`;
+    }, 1000);
+
+    // Анимация машины
+    function animateCar() {
+      if (!routeCoords || routeCoords.length === 0) {
+        animateFrame = requestAnimationFrame(animateCar);
+        return;
+      }
+
+      const totalMs = endTime - startTime;
+      const elapsed = new Date() - startTime;
+      let progress = elapsed / totalMs;
+      progress = Math.max(0, Math.min(1, progress));
+
+      const index = Math.floor(progress * (routeCoords.length - 1));
+      const pos = routeCoords[index];
+
+      carMarker.setLatLng([pos.lat, pos.lng]);
+
+      animateFrame = requestAnimationFrame(animateCar);
+    }
+
+    animateCar();
+  });
+}
+
+// ===== АДМИН-ПАНЕЛЬ =====
+if (params.get("admin") === "true") {
+  const p = prompt("Введите пароль администратора");
+  if (p === "123456") {
+    document.getElementById("admin").style.display = "block";
+  } else {
+    alert("Неверный пароль");
+  }
+}
+
+window.saveUser = async function() {
+  const id = uid.value.trim();
+  const name = uname.value.trim();
+  const t = endInput.value;
+  const from = fromInput.value.trim();
+  const to = toInput.value.trim();
+  const info = uinfo.value;
+
+  if (!id || !name || !t || !to) {
+    alert("Заполни все обязательные поля");
+    return;
+  }
+
+  const link =
+    location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+
+  await setDoc(doc(db, "investors", id), {
+    name,
+    from,
+    to,
+    endTime: new Date(t).toISOString(),
+    startTime: serverTimestamp(),
+    info: info || "—"
+  });
+
+  document.getElementById("clientLink").innerText = link;
+  document.getElementById("clientLinkBox").style.display = "block";
+
+  try {
+    await navigator.clipboard.writeText(link);
+    alert("Сохранено! Ссылка скопирована.");
+  } catch {
+    alert("Сохранено! Нажми кнопку 'Копировать'.");
+  }
+};
+
+window.copyLink = function() {
+  const text = document.getElementById("clientLink").innerText;
+  navigator.clipboard.writeText(text);
+  alert("Ссылка скопирована!");
 };
 </script>
+
 </body>
 </html>
