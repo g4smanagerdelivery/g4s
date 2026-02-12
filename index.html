@@ -103,6 +103,7 @@
       <input id="uid" placeholder="ID клиента (например: Tuman)">
       <input id="uname" placeholder="ФИО">
       <input type="datetime-local" id="endInput">
+      <input type="datetime-local" id="departureInput" placeholder="Время выезда">
       <input id="fromInput" placeholder="Откуда (город)">
       <input id="toInput" placeholder="Куда (город)">
       <textarea id="uinfo" rows="4" placeholder="Информация"></textarea>
@@ -237,7 +238,6 @@ async function buildRoute(from, to) {
 
     map.fitBounds(routeLine.getBounds());
 
-    // Если поле "Откуда" пустое → через 1 минуту очищаем карту полностью
     if (!from || from.trim() === "") {
       setTimeout(() => {
         if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
@@ -254,7 +254,7 @@ async function buildRoute(from, to) {
   });
 }
 
-// ===== КЛИЕНТСКАЯ ЧАСТЬ =====
+// ===== КЛИЕНТСКАЯ ЧАСТЬ С ВРЕМЕНЕМ ВЫЕЗДА =====
 if (userId) {
   const ref = doc(db, "investors", userId);
 
@@ -272,14 +272,17 @@ if (userId) {
       infoText = infoText.replace(/отмена!/gi, 
         '<span class="cancel-blink">ОТМЕНА!</span>');
     }
-    // переносы строки
-infoText = infoText.replace(/\n/g, "<br>");
+    infoText = infoText.replace(/\n/g, "<br>");
     document.getElementById("infoText").innerHTML = infoText;
 
-    const endTime = new Date(d.endTime);
     const startTime = d.startTime?.toDate
       ? d.startTime.toDate()
       : new Date(d.startTime);
+    const endTime = new Date(d.endTime);
+
+    const departureTime = d.departureTime
+      ? new Date(d.departureTime)
+      : startTime;
 
     if (d.from !== lastFrom || d.to !== lastTo) {
       lastFrom = d.from;
@@ -287,49 +290,62 @@ infoText = infoText.replace(/\n/g, "<br>");
       await buildRoute(d.from, d.to);
     }
 
-    // Таймер прогресса
-    if (progressInterval) clearInterval(progressInterval);
-    progressInterval = setInterval(() => {
-      const now = new Date();
-      const total = endTime - startTime;
-      const passed = now - startTime;
-      let progress = Math.min(1, Math.max(0, passed / total));
+    // ===== Функция для старта машины =====
+    function startMovement() {
+      if (progressInterval) clearInterval(progressInterval);
+      progressInterval = setInterval(() => {
+        const now = new Date();
+        const total = endTime - startTime;
+        const passed = now - startTime;
+        let progress = Math.min(1, Math.max(0, passed / total));
 
-      const diff = Math.max(0, endTime - now);
-      const h = Math.floor(diff / 36e5);
-      const m = Math.floor(diff % 36e5 / 6e4);
-      const s = Math.floor(diff % 6e4 / 1000);
+        const diff = Math.max(0, endTime - now);
+        const h = Math.floor(diff / 36e5);
+        const m = Math.floor(diff % 36e5 / 6e4);
+        const s = Math.floor(diff % 6e4 / 1000);
 
-      document.getElementById("eta").innerText =
-        `${h}ч ${m}м ${s}с`;
+        document.getElementById("eta").innerText =
+          `${h}ч ${m}м ${s}с`;
 
-      const percent = Math.round(progress * 100);
-      document.getElementById("progress-fill").style.width = percent + "%";
-      document.getElementById("progress-text").innerText =
-        `Пройдено: ${percent}%`;
-    }, 1000);
+        const percent = Math.round(progress * 100);
+        document.getElementById("progress-fill").style.width = percent + "%";
+        document.getElementById("progress-text").innerText =
+          `Пройдено: ${percent}%`;
+      }, 1000);
 
-    // Анимация машины
-    function animateCar() {
-      if (!routeCoords || routeCoords.length === 0) {
+      function animateCar() {
+        if (!routeCoords || routeCoords.length === 0) {
+          animateFrame = requestAnimationFrame(animateCar);
+          return;
+        }
+
+        const totalMs = endTime - startTime;
+        const elapsed = new Date() - startTime;
+        let progress = elapsed / totalMs;
+        progress = Math.max(0, Math.min(1, progress));
+
+        const index = Math.floor(progress * (routeCoords.length - 1));
+        const pos = routeCoords[index];
+
+        carMarker.setLatLng([pos.lat, pos.lng]);
+
         animateFrame = requestAnimationFrame(animateCar);
-        return;
       }
 
-      const totalMs = endTime - startTime;
-      const elapsed = new Date() - startTime;
-      let progress = elapsed / totalMs;
-      progress = Math.max(0, Math.min(1, progress));
-
-      const index = Math.floor(progress * (routeCoords.length - 1));
-      const pos = routeCoords[index];
-
-      carMarker.setLatLng([pos.lat, pos.lng]);
-
-      animateFrame = requestAnimationFrame(animateCar);
+      animateCar();
     }
 
-    animateCar();
+    function waitForDeparture() {
+      const now = new Date();
+      if (now >= departureTime) {
+        startMovement();
+      } else {
+        const delay = departureTime - now;
+        setTimeout(startMovement, delay);
+      }
+    }
+
+    waitForDeparture();
   });
 }
 
@@ -347,6 +363,7 @@ window.saveUser = async function() {
   const id = uid.value.trim();
   const name = uname.value.trim();
   const t = endInput.value;
+  const departure = departureInput.value;
   const from = fromInput.value.trim();
   const to = toInput.value.trim();
   const info = uinfo.value;
@@ -364,6 +381,7 @@ window.saveUser = async function() {
     from,
     to,
     endTime: new Date(t).toISOString(),
+    departureTime: departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
     startTime: serverTimestamp(),
     info: info || "—"
   });
