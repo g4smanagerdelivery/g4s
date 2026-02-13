@@ -69,6 +69,24 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
 .leaflet-routing-container {
   display:none !important;
 }
+
+/* === Мигающий маячок === */
+.car-beacon {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: red;
+  border-radius: 50%;
+  box-shadow: 0 0 10px red, 0 0 20px red;
+  animation: beacon-blink 1s infinite;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+@keyframes beacon-blink {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0; }
+}
 </style>
 </head>
 
@@ -159,6 +177,10 @@ let carMarker = L.marker([48.0196,66.9237],{
   rotationOrigin:"center center"
 }).addTo(map);
 
+// ===== BEACON ICON =====
+const beaconIcon = L.divIcon({ className: 'car-beacon', iconSize: [20, 20], iconAnchor: [10, 10] });
+let beaconMarker = L.marker(carMarker.getLatLng(), { icon: beaconIcon }).addTo(map);
+
 let routeCoords=[];
 let routeLine=null;
 let router=null;
@@ -170,12 +192,10 @@ let progressInterval=null;
 let departureInterval=null;
 
 async function geocodeCity(city){
-  const url="https://nominatim.openstreetmap.org/search?format=json&q="
-  + encodeURIComponent(city+", Kazakhstan");
+  const url="https://nominatim.openstreetmap.org/search?format=json&q="+ encodeURIComponent(city+", Kazakhstan");
   const res=await fetch(url);
   const data=await res.json();
-  if(data && data.length>0)
-    return [parseFloat(data[0].lat),parseFloat(data[0].lon)];
+  if(data && data.length>0) return [parseFloat(data[0].lat),parseFloat(data[0].lon)];
   return [48.0196,66.9237];
 }
 
@@ -187,13 +207,11 @@ async function buildRoute(from,to){
   const fromCoords=await geocodeCity(from);
   const toCoords=await geocodeCity(to);
 
-  carMarker.setLatLng(fromCoords); // СТАВИМ НА СТАРТ
+  carMarker.setLatLng(fromCoords);
+  beaconMarker.setLatLng(fromCoords);
 
   router=L.Routing.control({
-    waypoints:[
-      L.latLng(fromCoords[0],fromCoords[1]),
-      L.latLng(toCoords[0],toCoords[1])
-    ],
+    waypoints:[ L.latLng(fromCoords[0],fromCoords[1]), L.latLng(toCoords[0],toCoords[1]) ],
     router:L.Routing.osrmv1({serviceUrl:"https://router.project-osrm.org/route/v1"}),
     addWaypoints:false,
     draggableWaypoints:false,
@@ -228,31 +246,21 @@ document.getElementById("toCity").innerText=d.to;
 
 let infoText=d.info||"—";
 if(infoText.toLowerCase().includes("отмена!")){
-  infoText=infoText.replace(/отмена!/gi,
-  '<span class="cancel-blink">ОТМЕНА!</span>');
+  infoText=infoText.replace(/отмена!/gi,'<span class="cancel-blink">ОТМЕНА!</span>');
 }
 infoText=infoText.replace(/\n/g,"<br>");
 document.getElementById("infoText").innerHTML=infoText;
 
 await buildRoute(d.from,d.to);
 
-const departureTime=d.departureTime
-? new Date(d.departureTime)
-: new Date(d.endTime);
-
+const departureTime=d.departureTime ? new Date(d.departureTime) : new Date(d.endTime);
 const endTime=new Date(d.endTime);
 
-// ===== ТАЙМЕР ДО ВЫЕЗДА =====
 if(departureInterval) clearInterval(departureInterval);
 departureInterval=setInterval(()=>{
 const now=new Date();
 const diff=departureTime-now;
-
-if(diff<=0){
-clearInterval(departureInterval);
-startMovement();
-return;
-}
+if(diff<=0){ clearInterval(departureInterval); startMovement(); return; }
 
 const h=Math.floor(diff/36e5);
 const m=Math.floor(diff%36e5/6e4);
@@ -263,7 +271,6 @@ document.getElementById("eta").innerText=
 },1000);
 
 function startMovement(){
-
 const tripStart=departureTime;
 
 if(progressInterval) clearInterval(progressInterval);
@@ -278,20 +285,15 @@ const h=Math.floor(diff/36e5);
 const m=Math.floor(diff%36e5/6e4);
 const s=Math.floor(diff%6e4/1000);
 
-document.getElementById("eta").innerText=
-`${h}ч ${m}м ${s}с`;
+document.getElementById("eta").innerText=`${h}ч ${m}м ${s}с`;
 
 const percent=Math.round(progress*100);
 document.getElementById("progress-fill").style.width=percent+"%";
-document.getElementById("progress-text").innerText=
-`Пройдено: ${percent}%`;
+document.getElementById("progress-text").innerText=`Пройдено: ${percent}%`;
 },1000);
 
 function animateCar(){
-if(!routeCoords.length){
-animateFrame=requestAnimationFrame(animateCar);
-return;
-}
+if(!routeCoords.length){ animateFrame=requestAnimationFrame(animateCar); return; }
 
 const total=endTime-tripStart;
 const elapsed=new Date()-tripStart;
@@ -311,6 +313,7 @@ const lat=p1.lat+(p2.lat-p1.lat)*fraction;
 const lng=p1.lng+(p2.lng-p1.lng)*fraction;
 
 carMarker.setLatLng([lat,lng]);
+beaconMarker.setLatLng([lat,lng]); // === обновление маячка ===
 
 const targetAngle=getAngle(p1,p2);
 currentAngle+=(targetAngle-currentAngle)*0.15;
@@ -321,15 +324,13 @@ animateFrame=requestAnimationFrame(animateCar);
 
 animateCar();
 }
-
 });
 }
 
 // ===== ADMIN =====
 if(params.get("admin")==="true"){
 const p=prompt("Введите пароль администратора");
-if(p==="123456")
-document.getElementById("admin").style.display="block";
+if(p==="123456") document.getElementById("admin").style.display="block";
 else alert("Неверный пароль");
 }
 
@@ -342,20 +343,14 @@ const from=fromInput.value.trim();
 const to=toInput.value.trim();
 const info=uinfo.value;
 
-if(!id||!name||!t||!to){
-alert("Заполни все обязательные поля");
-return;
-}
+if(!id||!name||!t||!to){ alert("Заполни все обязательные поля"); return; }
 
-const link=location.origin+location.pathname+
-"?user="+encodeURIComponent(id);
+const link=location.origin+location.pathname+"?user="+encodeURIComponent(id);
 
 await setDoc(doc(db,"investors",id),{
 name,from,to,
 endTime:new Date(t).toISOString(),
-departureTime:departure
-? new Date(departure).toISOString()
-: new Date(t).toISOString(),
+departureTime:departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
 startTime:serverTimestamp(),
 info:info||"—"
 });
@@ -363,23 +358,15 @@ info:info||"—"
 document.getElementById("clientLink").innerText=link;
 document.getElementById("clientLinkBox").style.display="block";
 
-try{
-await navigator.clipboard.writeText(link);
-alert("Сохранено! Ссылка скопирована.");
-}catch{
-alert("Сохранено!");
-}
+try{ await navigator.clipboard.writeText(link); alert("Сохранено! Ссылка скопирована."); }
+catch{ alert("Сохранено!"); }
 };
 
 window.copyLink=function(){
-navigator.clipboard.writeText(
-document.getElementById("clientLink").innerText);
+navigator.clipboard.writeText(document.getElementById("clientLink").innerText);
 alert("Ссылка скопирована!");
 };
 </script>
 
 </body>
 </html>
-
-
-
