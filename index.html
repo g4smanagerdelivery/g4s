@@ -75,17 +75,27 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
   position: absolute;
   width: 20px;
   height: 20px;
-  background: red;
   border-radius: 50%;
-  box-shadow: 0 0 10px red, 0 0 20px red;
-  animation: beacon-blink 1s infinite;
   pointer-events: none;
   transform: translate(-50%, -50%);
+  background: red;
+  box-shadow: 0 0 10px red, 0 0 20px red;
+  animation: beacon-blink 1s infinite alternate;
 }
 
 @keyframes beacon-blink {
-  0%, 50%, 100% { opacity: 1; }
-  25%, 75% { opacity: 0; }
+  0% {
+    background: red;
+    box-shadow: 0 0 10px red, 0 0 20px red;
+  }
+  50% {
+    background: blue;
+    box-shadow: 0 0 10px blue, 0 0 20px blue;
+  }
+  100% {
+    background: red;
+    box-shadow: 0 0 10px red, 0 0 20px red;
+  }
 }
 </style>
 </head>
