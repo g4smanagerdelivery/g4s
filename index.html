@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>G4S Инкассационная доставка</title>
+<title>Инкассационная доставка</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
@@ -68,11 +68,11 @@ const userId = params.get("user");
 const map = L.map("map",{zoomControl:false}).setView([48.0196,66.9237],5);
 L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}").addTo(map);
 
-// ===== ИКОНКА МАШИНЫ =====
+// ===== ИКОНКА МАШИНЫ (смотрит вверх) =====
 const carIcon = L.icon({
-  iconUrl:"https://cdn-icons-png.flaticon.com/512/8879/8879708.png",
-  iconSize:[50,50],
-  iconAnchor:[25,25]
+  iconUrl:"https://cdn-icons-png.flaticon.com/512/744/744465.png",
+  iconSize:[48,48],
+  iconAnchor:[24,24]
 });
 
 let carMarker = L.marker([48.0196,66.9237],{
@@ -84,25 +84,31 @@ let carMarker = L.marker([48.0196,66.9237],{
 let routeCoords=[];
 let router=null;
 let routeLine=null;
-let animateFrame=null;
-let progressInterval=null;
-let departureInterval=null;
 
+let departureInterval=null;
+let progressInterval=null;
+
+let currentAngle=0;
+let smoothProgress=0;
+
+// ===== УГОЛ =====
 function getAngle(p1,p2){
   const dx=p2.lng-p1.lng;
   const dy=p2.lat-p1.lat;
-  return Math.atan2(dy,dx)*180/Math.PI;
+  return Math.atan2(dx,dy)*180/Math.PI;
 }
 
+// ===== ГЕОКОДИНГ =====
 async function geocodeCity(city){
   const url="https://nominatim.openstreetmap.org/search?format=json&q="+encodeURIComponent(city);
   const res=await fetch(url);
   const data=await res.json();
-  return (data && data.length>0)
+  return (data&&data.length>0)
     ?[parseFloat(data[0].lat),parseFloat(data[0].lon)]
     :[48.0196,66.9237];
 }
 
+// ===== МАРШРУТ =====
 async function buildRoute(from,to){
 
   if(routeLine){ map.removeLayer(routeLine); }
@@ -134,7 +140,7 @@ if(userId){
 
   const ref=doc(db,"investors",userId);
 
-  onSnapshot(ref, async (snap)=>{
+  onSnapshot(ref,async (snap)=>{
 
     if(!snap.exists()) return;
 
@@ -144,10 +150,10 @@ if(userId){
     document.getElementById("fromCity").innerText=d.from;
     document.getElementById("toCity").innerText=d.to;
 
-    let infoText=d.info||"—";
-    if(infoText.toLowerCase().includes("отмена!"))
-      infoText=infoText.replace(/отмена!/gi,'<span class="cancel-blink">ОТМЕНА!</span>');
-    document.getElementById("infoText").innerHTML=infoText;
+    let info=d.info||"—";
+    if(info.toLowerCase().includes("отмена!"))
+      info=info.replace(/отмена!/gi,'<span class="cancel-blink">ОТМЕНА!</span>');
+    document.getElementById("infoText").innerHTML=info;
 
     const departureTime=new Date(d.departureTime);
     const endTime=new Date(d.endTime);
@@ -174,20 +180,18 @@ if(userId){
       document.getElementById("eta").innerText=
         `Выезд через ${h}ч ${m}м ${s}с`;
 
-      document.getElementById("progress-fill").style.width="0%";
-      document.getElementById("progress-text").innerText="Ожидание выезда";
-
     },1000);
 
     function startMovement(){
-
-      if(progressInterval) clearInterval(progressInterval);
 
       progressInterval=setInterval(()=>{
         const now=new Date();
         const total=endTime-departureTime;
         const passed=now-departureTime;
-        let progress=Math.min(1,Math.max(0,passed/total));
+        let realProgress=Math.min(1,Math.max(0,passed/total));
+
+        // Плавное приближение к реальному прогрессу
+        smoothProgress += (realProgress - smoothProgress) * 0.05;
 
         const diff=Math.max(0,endTime-now);
         const h=Math.floor(diff/36e5);
@@ -197,38 +201,36 @@ if(userId){
         document.getElementById("eta").innerText=
           `${h}ч ${m}м ${s}с`;
 
-        const percent=Math.round(progress*100);
+        const percent=Math.round(smoothProgress*100);
         document.getElementById("progress-fill").style.width=percent+"%";
-        document.getElementById("progress-text").innerText=
-          `Пройдено: ${percent}%`;
+        document.getElementById("progress-text").innerText=`Пройдено: ${percent}%`;
 
-      },1000);
+        moveCar();
 
-      function animateCar(){
+      },30);
+    }
 
-        if(!routeCoords.length){
-          animateFrame=requestAnimationFrame(animateCar);
-          return;
-        }
+    function moveCar(){
 
-        const totalMs=endTime-departureTime;
-        const elapsed=new Date()-departureTime;
-        let progress=Math.max(0,Math.min(1,elapsed/totalMs));
+      if(!routeCoords.length) return;
 
-        const index=Math.floor(progress*(routeCoords.length-1));
-        const pos=routeCoords[index];
+      const indexFloat=smoothProgress*(routeCoords.length-1);
+      const index=Math.floor(indexFloat);
+      const fraction=indexFloat-index;
 
-        carMarker.setLatLng([pos.lat,pos.lng]);
+      const p1=routeCoords[index];
+      const p2=routeCoords[Math.min(index+1,routeCoords.length-1)];
 
-        if(index<routeCoords.length-1){
-          const next=routeCoords[index+1];
-          carMarker.setRotationAngle(getAngle(pos,next));
-        }
+      // Интерполяция координат (плавное движение)
+      const lat=p1.lat+(p2.lat-p1.lat)*fraction;
+      const lng=p1.lng+(p2.lng-p1.lng)*fraction;
 
-        animateFrame=requestAnimationFrame(animateCar);
-      }
+      carMarker.setLatLng([lat,lng]);
 
-      animateCar();
+      const targetAngle=getAngle(p1,p2);
+      currentAngle+= (targetAngle-currentAngle)*0.1;
+
+      carMarker.setRotationAngle(currentAngle);
     }
 
   });
