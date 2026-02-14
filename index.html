@@ -78,9 +78,42 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
   border-radius: 50%;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  background: red;
-  box-shadow: 0 0 10px red, 0 0 20px red;
-  animation: beacon-blink 1s infinite alternate;
+  animation: beacon-cycle 1.2s infinite;
+}
+
+/* Синий → Красный → Пауза */
+@keyframes beacon-cycle {
+
+  /* СИНИЙ */
+  0% {
+    background: blue;
+    box-shadow: 0 0 12px blue, 0 0 25px blue;
+    opacity: 1;
+  }
+
+  /* КРАСНЫЙ */
+  25% {
+    background: red;
+    box-shadow: 0 0 12px red, 0 0 25px red;
+    opacity: 1;
+  }
+
+  /* ПРОПАЛ */
+  50% {
+    opacity: 0;
+  }
+
+  /* Остаётся пропавшим */
+  75% {
+    opacity: 0;
+  }
+
+  /* Возврат к синему */
+  100% {
+    background: blue;
+    box-shadow: 0 0 12px blue, 0 0 25px blue;
+    opacity: 1;
+  }
 }
 
 @keyframes beacon-blink {
@@ -414,5 +447,6 @@ alert("Ссылка скопирована!");
 
 </body>
 </html>
+
 
 
