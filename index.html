@@ -209,19 +209,30 @@ async function geocodeCity(city){
   return [48.0196,66.9237];
 }
 
-async function buildRoute(from,to){
+async function buildRoute(from,to, useCurrentPosition=false){
+
   if(routeLine){map.removeLayer(routeLine);}
   if(router){map.removeControl(router);}
   routeCoords=[];
 
-  const fromCoords=await geocodeCity(from);
-  const toCoords=await geocodeCity(to);
+  let fromCoords;
 
-  carMarker.setLatLng(fromCoords);
-  beaconMarker.setLatLng(fromCoords);
+  if(useCurrentPosition){
+    const current = carMarker.getLatLng();
+    fromCoords = [current.lat, current.lng];
+  } else {
+    fromCoords = await geocodeCity(from);
+    carMarker.setLatLng(fromCoords);
+    beaconMarker.setLatLng(fromCoords);
+  }
+
+  const toCoords = await geocodeCity(to);
 
   router=L.Routing.control({
-    waypoints:[ L.latLng(fromCoords[0],fromCoords[1]), L.latLng(toCoords[0],toCoords[1]) ],
+    waypoints:[
+      L.latLng(fromCoords[0],fromCoords[1]),
+      L.latLng(toCoords[0],toCoords[1])
+    ],
     router:L.Routing.osrmv1({serviceUrl:"https://router.project-osrm.org/route/v1"}),
     addWaypoints:false,
     draggableWaypoints:false,
@@ -263,10 +274,10 @@ document.getElementById("infoText").innerHTML=infoText;
 
 if(!d.from || d.from.trim() === ""){
 
-  // Стартуем из точки назначения
-  await buildRoute(d.to, d.to);
+  // Стартуем с текущей позиции
+  await buildRoute(null, d.to, true);
 
-  // Через минуту полностью убираем машину
+  // Когда доедет — исчезает через 60 сек
   setTimeout(() => {
 
     if(routeLine) map.removeLayer(routeLine);
@@ -403,4 +414,5 @@ alert("Ссылка скопирована!");
 
 </body>
 </html>
+
 
