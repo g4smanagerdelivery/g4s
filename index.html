@@ -261,7 +261,30 @@ if(infoText.toLowerCase().includes("отмена!")){
 infoText=infoText.replace(/\n/g,"<br>");
 document.getElementById("infoText").innerHTML=infoText;
 
-await buildRoute(d.from,d.to);
+if(!d.from || d.from.trim() === ""){
+
+  // Стартуем из точки назначения
+  await buildRoute(d.to, d.to);
+
+  // Через минуту полностью убираем машину
+  setTimeout(() => {
+
+    if(routeLine) map.removeLayer(routeLine);
+    if(router) map.removeControl(router);
+
+    map.removeLayer(carMarker);
+    map.removeLayer(beaconMarker);
+
+    if(animateFrame) cancelAnimationFrame(animateFrame);
+    if(progressInterval) clearInterval(progressInterval);
+
+  }, 60000);
+
+} else {
+
+  await buildRoute(d.from, d.to);
+
+}
 
 const departureTime=d.departureTime ? new Date(d.departureTime) : new Date(d.endTime);
 const endTime=new Date(d.endTime);
@@ -380,3 +403,4 @@ alert("Ссылка скопирована!");
 
 </body>
 </html>
+
