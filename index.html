@@ -378,8 +378,9 @@ if (params.get("admin") === "true") {
     }
 }
 
+// ===== SAVE USER =====
 window.saveUser = async function() {
-    // Явное получение элементов
+    // Получаем элементы через getElementById
     const id = document.getElementById("uid").value.trim();
     const name = document.getElementById("uname").value.trim();
     const t = document.getElementById("endInput").value;
@@ -404,17 +405,15 @@ window.saveUser = async function() {
             info: info || "—"
         });
 
-        // Формируем ссылку для клиента
         const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
         document.getElementById("clientLink").innerText = link;
         document.getElementById("clientLinkBox").style.display = "block";
 
-        // Копируем ссылку в буфер
         try {
             await navigator.clipboard.writeText(link);
-            alert("Сохранено! Ссылка для клиента скопирована.");
+            alert("Сохранено! Ссылка скопирована.");
         } catch {
-            alert("Сохранено! Ссылка для клиента готова к копированию.");
+            alert("Сохранено! Ссылка готова к копированию.");
         }
 
     } catch (err) {
@@ -423,31 +422,17 @@ window.saveUser = async function() {
     }
 };
 
-// Копирование кнопкой
+// Копирование ссылки через кнопку
 window.copyLink = function() {
     const link = document.getElementById("clientLink").innerText;
     navigator.clipboard.writeText(link)
         .then(() => alert("Ссылка скопирована!"))
         .catch(() => alert("Не удалось скопировать ссылку"));
 };
-    document.getElementById("clientLink").innerText = link;
-    document.getElementById("clientLinkBox").style.display = "block";
-
-    try {
-        await navigator.clipboard.writeText(link);
-        alert("Сохранено! Ссылка скопирована.");
-    } catch {
-        alert("Сохранено!");
-    }
-};
-
-window.copyLink = function() {
-    navigator.clipboard.writeText(document.getElementById("clientLink").innerText);
-    alert("Ссылка скопирована!");
-};
 </script>
 </body>
 </html>
+
 
 
 
