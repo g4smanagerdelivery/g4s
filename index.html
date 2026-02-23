@@ -248,20 +248,13 @@ async function triggerCancelMode(d) {
 
     if (!routeCoords.length) return;
 
-    const current = carMarker.getLatLng();
-
     if (animateFrame) cancelAnimationFrame(animateFrame);
     if (progressInterval) clearInterval(progressInterval);
 
-    await buildRoute(
-        current.lat + "," + current.lng,
-        d.from,
-        true
-    );
+    await buildRoute(d.from, d.from, true);
 
     smoothProgress = 0;
 
-    startMovement();
 }
   
 function getAngle(p1, p2) {
@@ -463,5 +456,6 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
 
