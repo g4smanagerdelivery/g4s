@@ -305,16 +305,22 @@ if(infoText.toLowerCase().includes("отмена!")){
 infoText=infoText.replace(/\n/g,"<br>");
 document.getElementById("infoText").innerHTML=infoText;
 
-if(!d.from || d.from.trim() === ""){
 
-  // Стартуем с текущей позиции
-  await buildRoute(null, d.to, true);
+// ===============================
+// 🔴 ЕСЛИ В ПОЛЕ "КУДА" НАПИСАНО ОТМЕНА
+// ===============================
+if(d.to && d.to.toLowerCase().includes("отмена")){
 
-  // Когда доедет — исчезает через 60 сек
+  if(routeLine) map.removeLayer(routeLine);
+  if(router) map.removeControl(router);
+  routeCoords=[];
+
+  // Разворот машины
+  currentAngle += 180;
+  carMarker.setRotationAngle(currentAngle);
+
+  // Через 60 секунд всё исчезает
   setTimeout(() => {
-
-    if(routeLine) map.removeLayer(routeLine);
-    if(router) map.removeControl(router);
 
     map.removeLayer(carMarker);
     map.removeLayer(beaconMarker);
@@ -323,6 +329,17 @@ if(!d.from || d.from.trim() === ""){
     if(progressInterval) clearInterval(progressInterval);
 
   }, 60000);
+
+  return; // ВАЖНО — дальше код не выполняется
+}
+
+
+// ===============================
+// 🟢 ОБЫЧНАЯ ЛОГИКА
+// ===============================
+if(!d.from || d.from.trim() === ""){
+
+  await buildRoute(null, d.to, true);
 
 } else {
 
@@ -447,7 +464,3 @@ alert("Ссылка скопирована!");
 
 </body>
 </html>
-
-
-
-
