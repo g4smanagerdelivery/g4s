@@ -69,67 +69,6 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
 .leaflet-routing-container {
   display:none !important;
 }
-
-/* === Мигающий маячок === */
-.car-beacon {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  animation: beacon-cycle 1.2s infinite;
-}
-
-/* Синий → Красный → Пауза */
-@keyframes beacon-cycle {
-
-  /* СИНИЙ */
-  0% {
-    background: blue;
-    box-shadow: 0 0 12px blue, 0 0 25px blue;
-    opacity: 1;
-  }
-
-  /* КРАСНЫЙ */
-  25% {
-    background: red;
-    box-shadow: 0 0 12px red, 0 0 25px red;
-    opacity: 1;
-  }
-
-  /* ПРОПАЛ */
-  50% {
-    opacity: 0;
-  }
-
-  /* Остаётся пропавшим */
-  75% {
-    opacity: 0;
-  }
-
-  /* Возврат к синему */
-  100% {
-    background: blue;
-    box-shadow: 0 0 12px blue, 0 0 25px blue;
-    opacity: 1;
-  }
-}
-
-@keyframes beacon-blink {
-  0% {
-    background: red;
-    box-shadow: 0 0 10px red, 0 0 20px red;
-  }
-  50% {
-    background: blue;
-    box-shadow: 0 0 10px blue, 0 0 20px blue;
-  }
-  100% {
-    background: red;
-    box-shadow: 0 0 10px red, 0 0 20px red;
-  }
-}
 </style>
 </head>
 
@@ -210,19 +149,16 @@ L.tileLayer(
 
 // ===== CAR ICON =====
 const carIcon = L.icon({
-  iconUrl: "g4s.png",
-  iconSize: [60, 60],
-  iconAnchor: [30, 30]
+  iconUrl:"https://cdn-icons-png.flaticon.com/512/684/684908.png",
+  iconSize:[40,40],
+  iconAnchor:[20,20]
 });
+
 let carMarker = L.marker([48.0196,66.9237],{
   icon:carIcon,
   rotationAngle:0,
   rotationOrigin:"center center"
 }).addTo(map);
-
-// ===== BEACON ICON =====
-const beaconIcon = L.divIcon({ className: 'car-beacon', iconSize: [20, 20], iconAnchor: [10, 10] });
-let beaconMarker = L.marker(carMarker.getLatLng(), { icon: beaconIcon }).addTo(map);
 
 let routeCoords=[];
 let routeLine=null;
@@ -235,31 +171,24 @@ let progressInterval=null;
 let departureInterval=null;
 
 async function geocodeCity(city){
-  const url="https://nominatim.openstreetmap.org/search?format=json&q="+ encodeURIComponent(city+", Kazakhstan");
+  const url="https://nominatim.openstreetmap.org/search?format=json&q="
+  + encodeURIComponent(city+", Kazakhstan");
   const res=await fetch(url);
   const data=await res.json();
-  if(data && data.length>0) return [parseFloat(data[0].lat),parseFloat(data[0].lon)];
+  if(data && data.length>0)
+    return [parseFloat(data[0].lat),parseFloat(data[0].lon)];
   return [48.0196,66.9237];
 }
 
-async function buildRoute(from,to, useCurrentPosition=false){
-
+async function buildRoute(from,to){
   if(routeLine){map.removeLayer(routeLine);}
   if(router){map.removeControl(router);}
   routeCoords=[];
 
-  let fromCoords;
+  const fromCoords=await geocodeCity(from);
+  const toCoords=await geocodeCity(to);
 
-  if(useCurrentPosition){
-    const current = carMarker.getLatLng();
-    fromCoords = [current.lat, current.lng];
-  } else {
-    fromCoords = await geocodeCity(from);
-    carMarker.setLatLng(fromCoords);
-    beaconMarker.setLatLng(fromCoords);
-  }
-
-  const toCoords = await geocodeCity(to);
+  carMarker.setLatLng(fromCoords); // СТАВИМ НА СТАРТ
 
   router=L.Routing.control({
     waypoints:[
@@ -298,75 +227,33 @@ document.getElementById("clientName").innerText=d.name;
 document.getElementById("fromCity").innerText=d.from;
 document.getElementById("toCity").innerText=d.to;
 
-let lastFrom = null;
-let lastTo = null;
 let infoText=d.info||"—";
 if(infoText.toLowerCase().includes("отмена!")){
-  infoText=infoText.replace(/отмена!/gi,'<span class="cancel-blink">ОТМЕНА!</span>');
+  infoText=infoText.replace(/отмена!/gi,
+  '<span class="cancel-blink">ОТМЕНА!</span>');
 }
 infoText=infoText.replace(/\n/g,"<br>");
 document.getElementById("infoText").innerHTML=infoText;
 
+await buildRoute(d.from,d.to);
 
-// ===============================
-// 🔴 ЕСЛИ В ПОЛЕ "КУДА" НАПИСАНО ОТМЕНА
-// ===============================
-if(d.to && d.to.toLowerCase().includes("отмена")){
+const departureTime=d.departureTime
+? new Date(d.departureTime)
+: new Date(d.endTime);
 
-  if(routeLine) map.removeLayer(routeLine);
-  if(router) map.removeControl(router);
-  routeCoords=[];
-
-  // Разворот машины
-  currentAngle += 180;
-  carMarker.setRotationAngle(currentAngle);
-
-  // Через 60 секунд всё исчезает
-  setTimeout(() => {
-
-    map.removeLayer(carMarker);
-    map.removeLayer(beaconMarker);
-
-    if(animateFrame) cancelAnimationFrame(animateFrame);
-    if(progressInterval) clearInterval(progressInterval);
-
-  }, 60000);
-
-  return; // ВАЖНО — дальше код не выполняется
-}
-
-
-// ===============================
-// 🟢 ОБЫЧНАЯ ЛОГИКА
-// ===============================
-
-// Если маршрут не изменился — ничего не перестраиваем
-if(d.from === lastFrom && d.to === lastTo){
-  return;
-}
-
-// Запоминаем новые значения
-lastFrom = d.from;
-lastTo = d.to;
-
-if(!d.from || d.from.trim() === ""){
-
-  await buildRoute(null, d.to, true);
-
-} else {
-
-  await buildRoute(d.from, d.to);
-
-}
-
-const departureTime=d.departureTime ? new Date(d.departureTime) : new Date(d.endTime);
 const endTime=new Date(d.endTime);
 
+// ===== ТАЙМЕР ДО ВЫЕЗДА =====
 if(departureInterval) clearInterval(departureInterval);
 departureInterval=setInterval(()=>{
 const now=new Date();
 const diff=departureTime-now;
-if(diff<=0){ clearInterval(departureInterval); startMovement(); return; }
+
+if(diff<=0){
+clearInterval(departureInterval);
+startMovement();
+return;
+}
 
 const h=Math.floor(diff/36e5);
 const m=Math.floor(diff%36e5/6e4);
@@ -377,6 +264,7 @@ document.getElementById("eta").innerText=
 },1000);
 
 function startMovement(){
+
 const tripStart=departureTime;
 
 if(progressInterval) clearInterval(progressInterval);
@@ -391,15 +279,20 @@ const h=Math.floor(diff/36e5);
 const m=Math.floor(diff%36e5/6e4);
 const s=Math.floor(diff%6e4/1000);
 
-document.getElementById("eta").innerText=`${h}ч ${m}м ${s}с`;
+document.getElementById("eta").innerText=
+`${h}ч ${m}м ${s}с`;
 
 const percent=Math.round(progress*100);
 document.getElementById("progress-fill").style.width=percent+"%";
-document.getElementById("progress-text").innerText=`Пройдено: ${percent}%`;
+document.getElementById("progress-text").innerText=
+`Пройдено: ${percent}%`;
 },1000);
 
 function animateCar(){
-if(!routeCoords.length){ animateFrame=requestAnimationFrame(animateCar); return; }
+if(!routeCoords.length){
+animateFrame=requestAnimationFrame(animateCar);
+return;
+}
 
 const total=endTime-tripStart;
 const elapsed=new Date()-tripStart;
@@ -419,7 +312,6 @@ const lat=p1.lat+(p2.lat-p1.lat)*fraction;
 const lng=p1.lng+(p2.lng-p1.lng)*fraction;
 
 carMarker.setLatLng([lat,lng]);
-beaconMarker.setLatLng([lat,lng]); // === обновление маячка ===
 
 const targetAngle=getAngle(p1,p2);
 currentAngle+=(targetAngle-currentAngle)*0.15;
@@ -430,13 +322,15 @@ animateFrame=requestAnimationFrame(animateCar);
 
 animateCar();
 }
+
 });
 }
 
 // ===== ADMIN =====
 if(params.get("admin")==="true"){
 const p=prompt("Введите пароль администратора");
-if(p==="fog") document.getElementById("admin").style.display="block";
+if(p==="123456")
+document.getElementById("admin").style.display="block";
 else alert("Неверный пароль");
 }
 
@@ -449,14 +343,20 @@ const from=fromInput.value.trim();
 const to=toInput.value.trim();
 const info=uinfo.value;
 
-if(!id||!name||!t||!to){ alert("Заполни все обязательные поля"); return; }
+if(!id||!name||!t||!to){
+alert("Заполни все обязательные поля");
+return;
+}
 
-const link=location.origin+location.pathname+"?user="+encodeURIComponent(id);
+const link=location.origin+location.pathname+
+"?user="+encodeURIComponent(id);
 
 await setDoc(doc(db,"investors",id),{
 name,from,to,
 endTime:new Date(t).toISOString(),
-departureTime:departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
+departureTime:departure
+? new Date(departure).toISOString()
+: new Date(t).toISOString(),
 startTime:serverTimestamp(),
 info:info||"—"
 });
@@ -464,16 +364,20 @@ info:info||"—"
 document.getElementById("clientLink").innerText=link;
 document.getElementById("clientLinkBox").style.display="block";
 
-try{ await navigator.clipboard.writeText(link); alert("Сохранено! Ссылка скопирована."); }
-catch{ alert("Сохранено!"); }
+try{
+await navigator.clipboard.writeText(link);
+alert("Сохранено! Ссылка скопирована.");
+}catch{
+alert("Сохранено!");
+}
 };
 
 window.copyLink=function(){
-navigator.clipboard.writeText(document.getElementById("clientLink").innerText);
+navigator.clipboard.writeText(
+document.getElementById("clientLink").innerText);
 alert("Ссылка скопирована!");
 };
 </script>
 
 </body>
 </html>
-
