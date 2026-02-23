@@ -203,38 +203,47 @@ async function geocodeCity(city){
   return [48.0196,66.9237]; 
 } 
 
-async function buildRoute(from,to, useCurrentPosition=false){ 
-if(routeLine){map.removeLayer(routeLine);} 
-if(router){map.removeControl(router);} 
-routeCoords=[]; 
-let fromCoords; 
-if(useCurrentPosition){ 
-const current = carMarker.getLatLng(); 
-fromCoords = [current.lat, current.lng]; } 
-else { fromCoords = await geocodeCity(from); 
-carMarker.setLatLng(fromCoords); 
+async function buildRoute(from, to, useCurrentPosition = false) {
+    if (routeLine) {
+        map.removeLayer(routeLine);
+    }
+    if (router) {
+        map.removeControl(router);
+    }
+    routeCoords = [];
 
-beaconMarker.setLatLng(fromCoords);
+    let fromCoords;
+    if (useCurrentPosition) {
+        const current = carMarker.getLatLng();
+        fromCoords = [current.lat, current.lng];
+    } else {
+        fromCoords = await geocodeCity(from);
+        carMarker.setLatLng(fromCoords);
+        beaconMarker.setLatLng(fromCoords);
+    }
 
-const toCoords = await geocodeCity(to);
+    const toCoords = await geocodeCity(to);
 
-router = L.Routing.control({
-    waypoints: [
-        L.latLng(fromCoords[0], fromCoords[1]),
-        L.latLng(toCoords[0], toCoords[1])
-    ],
-    router: L.Routing.osrmv1({ serviceUrl: "https://router.project-osrm.org/route/v1" }),
-    addWaypoints: false,
-    draggableWaypoints: false,
-    fitSelectedRoutes: true
-}).addTo(map);
+    router = L.Routing.control({
+        waypoints: [
+            L.latLng(fromCoords[0], fromCoords[1]),
+            L.latLng(toCoords[0], toCoords[1])
+        ],
+        router: L.Routing.osrmv1({
+            serviceUrl: "https://router.project-osrm.org/route/v1"
+        }),
+        addWaypoints: false,
+        draggableWaypoints: false,
+        fitSelectedRoutes: true
+    }).addTo(map);
 
-router.on("routesfound", function(e) {
-    const route = e.routes[0];
-    routeCoords = route.coordinates;
-    routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
-    map.fitBounds(routeLine.getBounds());
-});
+    router.on("routesfound", function(e) {
+        const route = e.routes[0];
+        routeCoords = route.coordinates;
+        routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
+        map.fitBounds(routeLine.getBounds());
+    });
+}
 
 function getAngle(p1, p2) {
     const dx = p2.lng - p1.lng;
@@ -413,3 +422,4 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
