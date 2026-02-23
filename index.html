@@ -250,15 +250,58 @@ async function buildRoute(from, to, useCurrentPosition = false) {
   
 async function triggerCancelMode(d) {
 
-    if (!routeCoords.length) return;
-
     if (animateFrame) cancelAnimationFrame(animateFrame);
     if (progressInterval) clearInterval(progressInterval);
 
-    await buildRoute(d.from, d.from, true);
+    // Переворачиваем координаты маршрута
+    routeCoords = routeCoords.slice().reverse();
 
-    smoothProgress = 0;
+    const cancelStart = new Date();
+    const cancelEnd = new Date(cancelStart.getTime() + 60000); // 1 минута
 
+    function animateReturn() {
+
+        if (!routeCoords.length) {
+            requestAnimationFrame(animateReturn);
+            return;
+        }
+
+        const now = new Date();
+        const total = cancelEnd - cancelStart;
+        const elapsed = now - cancelStart;
+
+        let progress = Math.min(1, elapsed / total);
+
+        const indexFloat = progress * (routeCoords.length - 1);
+        const index = Math.floor(indexFloat);
+        const fraction = indexFloat - index;
+
+        const p1 = routeCoords[index];
+        const p2 = routeCoords[Math.min(index + 1, routeCoords.length - 1)];
+
+        const lat = p1.lat + (p2.lat - p1.lat) * fraction;
+        const lng = p1.lng + (p2.lng - p1.lng) * fraction;
+
+        carMarker.setLatLng([lat, lng]);
+        beaconMarker.setLatLng([lat, lng]);
+
+        const targetAngle = getAngle(p1, p2);
+        currentAngle += (targetAngle - currentAngle) * 0.15;
+        carMarker.setRotationAngle(currentAngle);
+
+        if (progress < 1) {
+            animateFrame = requestAnimationFrame(animateReturn);
+        } else {
+
+            if (routeLine) map.removeLayer(routeLine);
+            if (router) map.removeControl(router);
+
+            map.removeLayer(carMarker);
+            map.removeLayer(beaconMarker);
+        }
+    }
+
+    animateReturn();
 }
   
 function getAngle(p1, p2) {
@@ -490,7 +533,3 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
-
-
-
-
