@@ -380,7 +380,7 @@ if (params.get("admin") === "true") {
 
 // ===== SAVE USER =====
 window.saveUser = async function() {
-    // Получаем элементы через getElementById
+    // Явное получение элементов формы
     const id = document.getElementById("uid").value.trim();
     const name = document.getElementById("uname").value.trim();
     const t = document.getElementById("endInput").value;
@@ -395,6 +395,7 @@ window.saveUser = async function() {
     }
 
     try {
+        // Запись в Firestore
         await setDoc(doc(db, "investors", id), {
             name,
             from,
@@ -405,10 +406,12 @@ window.saveUser = async function() {
             info: info || "—"
         });
 
+        // Формируем ссылку для клиента
         const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
         document.getElementById("clientLink").innerText = link;
         document.getElementById("clientLinkBox").style.display = "block";
 
+        // Пытаемся скопировать ссылку в буфер
         try {
             await navigator.clipboard.writeText(link);
             alert("Сохранено! Ссылка скопирована.");
@@ -429,11 +432,14 @@ window.copyLink = function() {
         .then(() => alert("Ссылка скопирована!"))
         .catch(() => alert("Не удалось скопировать ссылку"));
 };
+
+// Копирование ссылки через кнопку
+window.copyLink = function() {
+    const link = document.getElementById("clientLink").innerText;
+    navigator.clipboard.writeText(link)
+        .then(() => alert("Ссылка скопирована!"))
+        .catch(() => alert("Не удалось скопировать ссылку"));
+};
 </script>
 </body>
 </html>
-
-
-
-
-
