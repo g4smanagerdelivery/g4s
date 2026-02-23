@@ -379,31 +379,51 @@ if (params.get("admin") === "true") {
 }
 
 window.saveUser = async function() {
-    const id = uid.value.trim();
-    const name = uname.value.trim();
-    const t = endInput.value;
-    const departure = departureInput.value;
-    const from = fromInput.value.trim();
-    const to = toInput.value.trim();
-    const info = uinfo.value;
+    // Явно получаем элементы
+    const id = document.getElementById("uid").value.trim();
+    const name = document.getElementById("uname").value.trim();
+    const t = document.getElementById("endInput").value;
+    const departure = document.getElementById("departureInput").value;
+    const from = document.getElementById("fromInput").value.trim();
+    const to = document.getElementById("toInput").value.trim();
+    const info = document.getElementById("uinfo").value;
 
+    // Проверка обязательных полей
     if (!id || !name || !t || !to) {
-        alert("Заполни все обязательные поля");
+        alert("Заполни все обязательные поля (ID, ФИО, Время окончания и Куда)");
         return;
     }
 
-    const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+    try {
+        // Сохраняем документ в Firestore
+        await setDoc(doc(db, "investors", id), {
+            name,
+            from,
+            to,
+            endTime: new Date(t).toISOString(),
+            departureTime: departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
+            startTime: serverTimestamp(),
+            info: info || "—"
+        });
 
-    await setDoc(doc(db, "investors", id), {
-        name,
-        from,
-        to,
-        endTime: new Date(t).toISOString(),
-        departureTime: departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
-        startTime: serverTimestamp(),
-        info: info || "—"
-    });
+        // Формируем ссылку для клиента
+        const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
+        document.getElementById("clientLink").innerText = link;
+        document.getElementById("clientLinkBox").style.display = "block";
 
+        // Пытаемся скопировать ссылку в буфер
+        try {
+            await navigator.clipboard.writeText(link);
+            alert("Сохранено! Ссылка для клиента скопирована.");
+        } catch {
+            alert("Сохранено! Ссылка для клиента готова к копированию.");
+        }
+
+    } catch (err) {
+        alert("Ошибка при сохранении: " + err.message);
+        console.error(err);
+    }
+};
     document.getElementById("clientLink").innerText = link;
     document.getElementById("clientLinkBox").style.display = "block";
 
@@ -422,4 +442,5 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
