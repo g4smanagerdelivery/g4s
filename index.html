@@ -250,38 +250,30 @@ async function buildRoute(from, to, useCurrentPosition = false) {
   
 async function triggerCancelMode(d) {
 
+    if (!routeCoords || routeCoords.length < 2) return;
+
     if (animateFrame) cancelAnimationFrame(animateFrame);
     if (progressInterval) clearInterval(progressInterval);
 
-    // Берём текущую позицию машины
-    const currentPosition = carMarker.getLatLng();
+    // Разворачиваем текущий маршрут
+    const reversedRoute = routeCoords.slice().reverse();
 
-    // Строим маршрут ОТ текущей точки ДО базы
-    await buildRoute(
-        `${currentPosition.lat},${currentPosition.lng}`,
-        d.from,
-        true
-    );
-
-    if (!routeCoords.length) return;
-
-    const cancelStart = new Date();
-    const cancelEnd = new Date(cancelStart.getTime() + 60000); // 1 минута
+    const cancelStart = Date.now();
+    const cancelDuration = 60000; // 60 секунд
 
     function animateReturn() {
 
-        const now = new Date();
-        const total = cancelEnd - cancelStart;
-        const elapsed = now - cancelStart;
+        const elapsed = Date.now() - cancelStart;
+        let progress = Math.min(1, elapsed / cancelDuration);
 
-        let progress = Math.min(1, elapsed / total);
-
-        const indexFloat = progress * (routeCoords.length - 1);
+        const indexFloat = progress * (reversedRoute.length - 1);
         const index = Math.floor(indexFloat);
         const fraction = indexFloat - index;
 
-        const p1 = routeCoords[index];
-        const p2 = routeCoords[Math.min(index + 1, routeCoords.length - 1)];
+        const p1 = reversedRoute[index];
+        const p2 = reversedRoute[Math.min(index + 1, reversedRoute.length - 1)];
+
+        if (!p1 || !p2) return;
 
         const lat = p1.lat + (p2.lat - p1.lat) * fraction;
         const lng = p1.lng + (p2.lng - p1.lng) * fraction;
@@ -296,10 +288,8 @@ async function triggerCancelMode(d) {
         if (progress < 1) {
             animateFrame = requestAnimationFrame(animateReturn);
         } else {
-
             if (routeLine) map.removeLayer(routeLine);
             if (router) map.removeControl(router);
-
             map.removeLayer(carMarker);
             map.removeLayer(beaconMarker);
         }
@@ -537,3 +527,4 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
