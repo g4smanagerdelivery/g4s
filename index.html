@@ -379,7 +379,7 @@ if (params.get("admin") === "true") {
 }
 
 window.saveUser = async function() {
-    // Явно получаем элементы
+    // Явное получение значений
     const id = document.getElementById("uid").value.trim();
     const name = document.getElementById("uname").value.trim();
     const t = document.getElementById("endInput").value;
@@ -388,14 +388,12 @@ window.saveUser = async function() {
     const to = document.getElementById("toInput").value.trim();
     const info = document.getElementById("uinfo").value;
 
-    // Проверка обязательных полей
     if (!id || !name || !t || !to) {
-        alert("Заполни все обязательные поля (ID, ФИО, Время окончания и Куда)");
+        alert("Заполни все обязательные поля (ID, ФИО, Время окончания, Куда)");
         return;
     }
 
     try {
-        // Сохраняем документ в Firestore
         await setDoc(doc(db, "investors", id), {
             name,
             from,
@@ -411,7 +409,7 @@ window.saveUser = async function() {
         document.getElementById("clientLink").innerText = link;
         document.getElementById("clientLinkBox").style.display = "block";
 
-        // Пытаемся скопировать ссылку в буфер
+        // Копируем ссылку в буфер
         try {
             await navigator.clipboard.writeText(link);
             alert("Сохранено! Ссылка для клиента скопирована.");
@@ -442,5 +440,6 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
 
