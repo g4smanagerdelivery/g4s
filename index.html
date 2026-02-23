@@ -191,6 +191,7 @@ const beaconIcon = L.divIcon({
 let beaconMarker = L.marker(carMarker.getLatLng(), { icon: beaconIcon }).addTo(map);
 
 let routeCoords=[];
+let originalRouteCoords = [];
 let routeLine=null;
 let router=null;
 let smoothProgress=0;
@@ -243,6 +244,9 @@ async function buildRoute(from, to, useCurrentPosition = false) {
     router.on("routesfound", function(e) {
         const route = e.routes[0];
         routeCoords = route.coordinates;
+      
+        originalRouteCoords = routeCoords.slice();
+      
         routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
         map.fitBounds(routeLine.getBounds());
     });
@@ -250,16 +254,15 @@ async function buildRoute(from, to, useCurrentPosition = false) {
   
 async function triggerCancelMode(d) {
 
-    if (!routeCoords || routeCoords.length < 2) return;
+    if (!originalRouteCoords.length) return;
 
     if (animateFrame) cancelAnimationFrame(animateFrame);
     if (progressInterval) clearInterval(progressInterval);
 
-    // Разворачиваем текущий маршрут
-    const reversedRoute = routeCoords.slice().reverse();
+    const reversedRoute = originalRouteCoords.slice().reverse();
 
     const cancelStart = Date.now();
-    const cancelDuration = 60000; // 60 секунд
+    const cancelDuration = 60000;
 
     function animateReturn() {
 
@@ -527,4 +530,5 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
