@@ -1,342 +1,415 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<title>G4S Инкассационная доставка</title>
+<!DOCTYPE html> 
+<html lang="ru"> 
+<head> 
+<meta charset="UTF-8"> 
+<title>G4S Инкассационная доставка</title> 
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/> 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script> 
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/> 
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script> 
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
-<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/master/leaflet.rotatedMarker.js"></script> 
 
-<script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/master/leaflet.rotatedMarker.js"></script>
+<style> 
+.cancel-blink { 
+  color: red; 
+  font-weight: bold; 
+  animation: blink 1s infinite; 
+} 
+@keyframes blink { 
+  0% { opacity:1; } 
+  50% { opacity:0; } 
+  100% { opacity:1; } 
+} 
+body { margin:0; font-family:Arial; background:#f2f2f2; } 
+#container { display:flex; height:100vh; } 
+#info { width:40%; padding:20px; background:white; box-sizing:border-box; overflow-y:auto; } 
+#map { width:60%; height:100vh; position:relative; } 
 
-<style>
-.cancel-blink {
-  color: red;
-  font-weight: bold;
-  animation: blink 1s infinite;
-}
-@keyframes blink {
-  0% { opacity:1; }
-  50% { opacity:0; }
-  100% { opacity:1; }
-}
-body { margin:0; font-family:Arial; background:#f2f2f2; }
-#container { display:flex; height:100vh; }
-#info { width:40%; padding:20px; background:white; box-sizing:border-box; overflow-y:auto; }
-#map { width:60%; height:100vh; position:relative; }
+#progress-wrapper { 
+  position:absolute; 
+  bottom:20px; 
+  left:10%; 
+  width:80%; 
+  background:rgba(255,255,255,0.9); 
+  padding:10px; 
+  border-radius:8px; 
+  box-shadow:0 0 5px rgba(0,0,0,0.2); 
+  text-align:center; 
+  z-index:1000; 
+} 
 
-#progress-wrapper {
-  position:absolute;
-  bottom:20px;
-  left:10%;
-  width:80%;
-  background:rgba(255,255,255,0.9);
-  padding:10px;
-  border-radius:8px;
-  box-shadow:0 0 5px rgba(0,0,0,0.2);
-  text-align:center;
-  z-index:1000;
-}
+#progress-bar { 
+  width:100%; 
+  height:10px; 
+  background:#ddd; 
+  border-radius:5px; 
+  overflow:hidden; 
+} 
+#progress-fill { 
+  height:100%; 
+  width:0%; 
+  background:#007bff; 
+  transition:width 0.3s linear; 
+} 
 
-#progress-bar {
-  width:100%;
-  height:10px;
-  background:#ddd;
-  border-radius:5px;
-  overflow:hidden;
-}
-#progress-fill {
-  height:100%;
-  width:0%;
-  background:#007bff;
-  transition:width 0.3s linear;
-}
+.leaflet-control-attribution, 
+.leaflet-routing-container { 
+  display:none !important; 
+} 
 
-.leaflet-control-attribution,
-.leaflet-routing-container {
-  display:none !important;
-}
+/* === Мигающий маячок === */ 
+.car-beacon { 
+  position: absolute; 
+  width: 20px; 
+  height: 20px; 
+  border-radius:50%; 
+  pointer-events: none; 
+  transform: translate(-50%, -50%); 
+  animation: beacon-cycle 1.2s infinite; 
+} 
 
-/* === Мигающий маячок === */
-.car-beacon {
-  position:absolute;
-  width:20px;
-  height:20px;
-  border-radius:50%;
-  pointer-events:none;
-  transform:translate(-50%, -50%);
-  animation:beacon-cycle 1.2s infinite;
-}
+/* Синий → Красный → Пауза */ 
+@keyframes beacon-cycle { 
+/* СИНИЙ */ 
+  0% { background: blue; box-shadow: 0 0 12px blue, 0 0 25px blue; opacity: 1; } 
+/* КРАСНЫЙ */ 
+  25% { background: red; box-shadow: 0 0 12px red, 0 0 25px red; opacity: 1; } 
+/* ПРОПАЛ */ 
+  50% { opacity: 0; } /* Остаётся пропавшим */ 
+  75% { opacity: 0; } /* Возврат к синему */ 
+  100% { background: blue; box-shadow: 0 0 12px blue, 0 0 25px blue; opacity: 1; } 
+} 
+@keyframes beacon-blink { 
+  0% { background: red; box-shadow: 0 0 10px red, 0 0 20px red; } 
+  50% { background: blue; box-shadow: 0 0 10px blue, 0 0 20px blue; } 
+  100% { background: red; box-shadow: 0 0 10px red, 0 0 20px red; } 
+} 
+</style> 
+</head> 
 
-@keyframes beacon-cycle {
-  0% { background:blue; box-shadow:0 0 12px blue, 0 0 25px blue; opacity:1; }
-  25% { background:red; box-shadow:0 0 12px red, 0 0 25px red; opacity:1; }
-  50% { opacity:0; }
-  75% { opacity:0; }
-  100% { background:blue; box-shadow:0 0 12px blue, 0 0 25px blue; opacity:1; }
-}
+<body> 
+<div id="container"> 
 
-@keyframes beacon-blink {
-  0% { background:red; box-shadow:0 0 10px red, 0 0 20px red; }
-  50% { background:blue; box-shadow:0 0 10px blue, 0 0 20px blue; }
-  100% { background:red; box-shadow:0 0 10px red, 0 0 20px red; }
-}
-</style>
-</head>
+<div id="info"> 
+<h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1> 
 
-<body>
-<div id="container">
+<h3>Получатель:</h3> 
+<p id="clientName">Загрузка…</p> 
 
-<div id="info">
-<h1>ИНКАССАЦИОННАЯ ДОСТАВКА</h1>
+<h3>Время прибытия / Выезд:</h3> 
+<p id="eta">--:--:--</p> 
 
-<h3>Получатель:</h3>
-<p id="clientName">Загрузка…</p>
+<h3>Маршрут:</h3> 
+<p><b>Откуда:</b> <span id="fromCity"></span></p> 
+<p><b>Куда:</b> <span id="toCity"></span></p> 
 
-<h3>Время прибытия / Выезд:</h3>
-<p id="eta">--:--:--</p>
+<h3>Информация:</h3> 
+<p id="infoText"></p> 
 
-<h3>Маршрут:</h3>
-<p><b>Откуда:</b> <span id="fromCity"></span></p>
-<p><b>Куда:</b> <span id="toCity"></span></p>
+<div id="admin" style="display:none; margin-top:20px; padding:15px; background:#f7f7f7;"> 
+<h2>Админ-панель</h2> 
+<input id="uid" placeholder="ID клиента"> 
+<input id="uname" placeholder="ФИО"> 
+<input type="datetime-local" id="endInput"> 
+<input type="datetime-local" id="departureInput"> 
+<input id="fromInput" placeholder="Откуда"> 
+<input id="toInput" placeholder="Куда"> 
+<textarea id="uinfo" rows="4" placeholder="Информация"></textarea> 
+<button onclick="saveUser()">Сохранить</button> 
 
-<h3>Информация:</h3>
-<p id="infoText"></p>
+<div id="clientLinkBox" style="display:none; margin-top:10px;"> 
+<b>Ссылка для клиента:</b><br> 
+<span id="clientLink"></span><br> 
+<button onclick="copyLink()">Копировать</button> 
+</div> 
+</div> 
+</div> 
 
-<div id="admin" style="display:none; margin-top:20px; padding:15px; background:#f7f7f7;">
-<h2>Админ-панель</h2>
-<input id="uid" placeholder="ID клиента">
-<input id="uname" placeholder="ФИО">
-<input type="datetime-local" id="endInput">
-<input type="datetime-local" id="departureInput">
-<input id="fromInput" placeholder="Откуда">
-<input id="toInput" placeholder="Куда">
-<textarea id="uinfo" rows="4" placeholder="Информация"></textarea>
-<button onclick="saveUser()">Сохранить</button>
+<div id="map"> 
+<div id="progress-wrapper"> 
+<div id="progress-bar"><div id="progress-fill"></div></div> 
+<div id="progress-text">Пройдено: 0%</div> 
+</div> 
+</div> 
 
-<div id="clientLinkBox" style="display:none; margin-top:10px;">
-<b>Ссылка для клиента:</b><br>
-<span id="clientLink"></span><br>
-<button onclick="copyLink()">Копировать</button>
-</div>
-</div>
-</div>
+</div> 
 
-<div id="map">
-<div id="progress-wrapper">
-<div id="progress-bar"><div id="progress-fill"></div></div>
-<div id="progress-text">Пройдено: 0%</div>
-</div>
-</div>
+<script type="module"> 
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js"; 
+import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js"; 
+const firebaseConfig = { 
+  apiKey:"AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc", 
+  authDomain:"auction-top7.firebaseapp.com", 
+  projectId:"auction-top7", 
+  storageBucket:"auction-top7.firebasestorage.app", 
+  messagingSenderId:"73096110012", 
+  appId:"1:73096110012:web:8f014f6faae5d08bd455b9" 
+}; 
+const app = initializeApp(firebaseConfig); 
+const db = getFirestore(app); 
 
-</div>
+const params = new URLSearchParams(location.search); 
+const userId = decodeURIComponent(params.get("user") || ""); 
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+// ===== MAP ===== 
+const map = L.map("map",{zoomControl:false, attributionControl:false}) 
+.setView([48.0196,66.9237],5); 
 
-const firebaseConfig = {
-  apiKey:"AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
-  authDomain:"auction-top7.firebaseapp.com",
-  projectId:"auction-top7",
-  storageBucket:"auction-top7.firebasestorage.app",
-  messagingSenderId:"73096110012",
-  appId:"1:73096110012:web:8f014f6faae5d08bd455b9"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-const params = new URLSearchParams(location.search);
-const userId = decodeURIComponent(params.get("user") || "");
-
-// MAP
-const map = L.map("map",{zoomControl:false, attributionControl:false})
-.setView([48.0196,66.9237],5);
-
-L.tileLayer(
-"https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+L.tileLayer( 
+"https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", 
 { attribution:"Esri" }
-).addTo(map);
+).addTo(map); 
 
-// CAR
-const carIcon = L.icon({
-  iconUrl:"g4s.png",
-  iconSize:[60,60],
-  iconAnchor:[30,30]
-});
+// ===== CAR ICON ===== 
+const carIcon = L.icon({ 
+iconUrl: "g4s.png", 
+iconSize: [60, 60], 
+iconAnchor: [30, 30] 
+}); 
 
-let carMarker = L.marker([48.0196,66.9237],{
-  icon:carIcon,
-  rotationAngle:0,
-  rotationOrigin:"center center"
+let carMarker = L.marker([48.0196,66.9237],{ 
+  icon:carIcon, 
+  rotationAngle:0, 
+  rotationOrigin:"center center" 
+}).addTo(map); 
+
+// ===== BEACON ICON ===== 
+const beaconIcon = L.divIcon({ 
+  className: 'car-beacon', 
+  iconSize: [20, 20], 
+  iconAnchor: [10, 10] 
+}); 
+
+let beaconMarker = L.marker(carMarker.getLatLng(), { icon: beaconIcon }).addTo(map); 
+
+let routeCoords=[]; 
+let routeLine=null; 
+let router=null; 
+let smoothProgress=0; 
+let currentAngle=0; 
+let animateFrame=null; 
+let progressInterval=null; 
+let departureInterval=null; 
+
+async function geocodeCity(city){ 
+  const url="https://nominatim.openstreetmap.org/search?format=json&q="+ 
+  encodeURIComponent(city+", Kazakhstan"); 
+  const res=await fetch(url); 
+  const data=await res.json(); 
+  if(data && data.length>0) 
+    return [parseFloat(data[0].lat),parseFloat(data[0].lon)]; 
+  return [48.0196,66.9237]; 
+} 
+
+async function buildRoute(from,to, useCurrentPosition=false){ 
+if(routeLine){map.removeLayer(routeLine);} 
+if(router){map.removeControl(router);} 
+routeCoords=[]; 
+let fromCoords; 
+if(useCurrentPosition){ 
+const current = carMarker.getLatLng(); 
+fromCoords = [current.lat, current.lng]; } 
+else { fromCoords = await geocodeCity(from); 
+carMarker.setLatLng(fromCoords); 
+
+beaconMarker.setLatLng(fromCoords);
+
+const toCoords = await geocodeCity(to);
+
+router = L.Routing.control({
+    waypoints: [
+        L.latLng(fromCoords[0], fromCoords[1]),
+        L.latLng(toCoords[0], toCoords[1])
+    ],
+    router: L.Routing.osrmv1({ serviceUrl: "https://router.project-osrm.org/route/v1" }),
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true
 }).addTo(map);
 
-// BEACON
-const beaconIcon = L.divIcon({
-  className:'car-beacon',
-  iconSize:[20,20],
-  iconAnchor:[10,10]
+router.on("routesfound", function(e) {
+    const route = e.routes[0];
+    routeCoords = route.coordinates;
+    routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
+    map.fitBounds(routeLine.getBounds());
 });
 
-let beaconMarker = L.marker(carMarker.getLatLng(),{icon:beaconIcon}).addTo(map);
-
-let routeCoords=[];
-let routeLine=null;
-let router=null;
-let smoothProgress=0;
-let currentAngle=0;
-let animateFrame=null;
-let progressInterval=null;
-let departureInterval=null;
-
-async function geocodeCity(city){
-  const url="https://nominatim.openstreetmap.org/search?format=json&q=" +
-  encodeURIComponent(city + ", Kazakhstan");
-  const res=await fetch(url);
-  const data=await res.json();
-  if(data && data.length>0)
-    return [parseFloat(data[0].lat),parseFloat(data[0].lon)];
-  return [48.0196,66.9237];
+function getAngle(p1, p2) {
+    const dx = p2.lng - p1.lng;
+    const dy = p2.lat - p1.lat;
+    return Math.atan2(dy, dx) * 180 / Math.PI;
 }
 
-function getAngle(p1,p2){
-  const dx=p2.lng-p1.lng;
-  const dy=p2.lat-p1.lat;
-  return Math.atan2(dy,dx)*180/Math.PI;
+if (userId) {
+    const ref = doc(db, "investors", userId);
+    onSnapshot(ref, async (snap) => {
+        if (!snap.exists()) return;
+        const d = snap.data();
+
+        document.getElementById("clientName").innerText = d.name;
+        document.getElementById("fromCity").innerText = d.from;
+        document.getElementById("toCity").innerText = d.to;
+
+        let infoText = d.info || "—";
+        if (infoText.toLowerCase().includes("отмена!")) {
+            infoText = infoText.replace(/отмена!/gi, '<span class="cancel-blink">ОТМЕНА!</span>');
+        }
+        infoText = infoText.replace(/\n/g, "<br>");
+        document.getElementById("infoText").innerHTML = infoText;
+
+        if (!d.from || d.from.trim() === "") {
+            // Стартуем с текущей позиции
+            await buildRoute(null, d.to, true);
+
+            // Когда доедет — исчезает через 60 сек
+            setTimeout(() => {
+                if (routeLine) map.removeLayer(routeLine);
+                if (router) map.removeControl(router);
+                map.removeLayer(carMarker);
+                map.removeLayer(beaconMarker);
+                if (animateFrame) cancelAnimationFrame(animateFrame);
+                if (progressInterval) clearInterval(progressInterval);
+            }, 60000);
+        } else {
+            await buildRoute(d.from, d.to);
+        }
+
+        const departureTime = d.departureTime ? new Date(d.departureTime) : new Date(d.endTime);
+        const endTime = new Date(d.endTime);
+
+        if (departureInterval) clearInterval(departureInterval);
+
+        departureInterval = setInterval(() => {
+            const now = new Date();
+            const diff = departureTime - now;
+
+            if (diff <= 0) {
+                clearInterval(departureInterval);
+                startMovement();
+                return;
+            }
+
+            const h = Math.floor(diff / 36e5);
+            const m = Math.floor(diff % 36e5 / 6e4);
+            const s = Math.floor(diff % 6e4 / 1000);
+
+            document.getElementById("eta").innerText = `Выезд через ${h}ч ${m}м ${s}с`;
+        }, 1000);
+
+        function startMovement() {
+            const tripStart = departureTime;
+
+            if (progressInterval) clearInterval(progressInterval);
+
+            progressInterval = setInterval(() => {
+                const now = new Date();
+                const total = endTime - tripStart;
+                const passed = now - tripStart;
+                let progress = Math.min(1, Math.max(0, passed / total));
+                const diff = Math.max(0, endTime - now);
+                const h = Math.floor(diff / 36e5);
+                const m = Math.floor(diff % 36e5 / 6e4);
+                const s = Math.floor(diff % 6e4 / 1000);
+
+                document.getElementById("eta").innerText = `${h}ч ${m}м ${s}с`;
+
+                const percent = Math.round(progress * 100);
+                document.getElementById("progress-fill").style.width = percent + "%";
+                document.getElementById("progress-text").innerText = `Пройдено: ${percent}%`;
+            }, 1000);
+
+            function animateCar() {
+                if (!routeCoords.length) {
+                    animateFrame = requestAnimationFrame(animateCar);
+                    return;
+                }
+
+                const total = endTime - tripStart;
+                const elapsed = new Date() - tripStart;
+                let realProgress = elapsed / total;
+                realProgress = Math.max(0, Math.min(1, realProgress));
+
+                smoothProgress += (realProgress - smoothProgress) * 0.05;
+
+                const indexFloat = smoothProgress * (routeCoords.length - 1);
+                const index = Math.floor(indexFloat);
+                const fraction = indexFloat - index;
+
+                const p1 = routeCoords[index];
+                const p2 = routeCoords[Math.min(index + 1, routeCoords.length - 1)];
+
+                const lat = p1.lat + (p2.lat - p1.lat) * fraction;
+                const lng = p1.lng + (p2.lng - p1.lng) * fraction;
+
+                carMarker.setLatLng([lat, lng]);
+                beaconMarker.setLatLng([lat, lng]);
+
+                // === обновление маячка ===
+                const targetAngle = getAngle(p1, p2);
+                currentAngle += (targetAngle - currentAngle) * 0.15;
+                carMarker.setRotationAngle(currentAngle);
+
+                animateFrame = requestAnimationFrame(animateCar);
+            }
+
+            animateCar();
+        }
+    });
 }
 
-if(userId){
-const ref=doc(db,"investors",userId);
-
-onSnapshot(ref,async(snap)=>{
-if(!snap.exists()) return;
-
-const d=snap.data();
-
-document.getElementById("clientName").innerText=d.name;
-document.getElementById("fromCity").innerText=d.from;
-document.getElementById("toCity").innerText=d.to;
-
-let infoText=d.info||"—";
-
-if(infoText.toLowerCase().includes("отмена!")){
-  infoText=infoText.replace(/отмена!/gi,'<span class="cancel-blink">ОТМЕНА!</span>');
+// ===== ADMIN =====
+if (params.get("admin") === "true") {
+    const p = prompt("Введите пароль администратора");
+    if (p === "fog") {
+        document.getElementById("admin").style.display = "block";
+    } else {
+        alert("Неверный пароль");
+    }
 }
 
-infoText=infoText.replace(/\n/g,"<br>");
-document.getElementById("infoText").innerHTML=infoText;
+window.saveUser = async function() {
+    const id = uid.value.trim();
+    const name = uname.value.trim();
+    const t = endInput.value;
+    const departure = departureInput.value;
+    const from = fromInput.value.trim();
+    const to = toInput.value.trim();
+    const info = uinfo.value;
 
-const departureTime=d.departureTime ? new Date(d.departureTime) : new Date(d.endTime);
-const endTime=new Date(d.endTime);
+    if (!id || !name || !t || !to) {
+        alert("Заполни все обязательные поля");
+        return;
+    }
 
-if(departureInterval) clearInterval(departureInterval);
+    const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
 
-departureInterval=setInterval(()=>{
-const now=new Date();
-const diff=departureTime-now;
+    await setDoc(doc(db, "investors", id), {
+        name,
+        from,
+        to,
+        endTime: new Date(t).toISOString(),
+        departureTime: departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
+        startTime: serverTimestamp(),
+        info: info || "—"
+    });
 
-if(diff<=0){
-  clearInterval(departureInterval);
-  startMovement();
-  return;
-}
+    document.getElementById("clientLink").innerText = link;
+    document.getElementById("clientLinkBox").style.display = "block";
 
-const h=Math.floor(diff/36e5);
-const m=Math.floor(diff%36e5/6e4);
-const s=Math.floor(diff%6e4/1000);
-
-document.getElementById("eta").innerText=
-`Выезд через ${h}ч ${m}м ${s}с`;
-
-},1000);
-
-function startMovement(){
-
-const tripStart=departureTime;
-
-if(progressInterval) clearInterval(progressInterval);
-
-progressInterval=setInterval(()=>{
-const now=new Date();
-const total=endTime-tripStart;
-const passed=now-tripStart;
-
-let progress=Math.min(1,Math.max(0,passed/total));
-const diff=Math.max(0,endTime-now);
-
-const h=Math.floor(diff/36e5);
-const m=Math.floor(diff%36e5/6e4);
-const s=Math.floor(diff%6e4/1000);
-
-document.getElementById("eta").innerText=
-`${h}ч ${m}м ${s}с`;
-
-const percent=Math.round(progress*100);
-
-document.getElementById("progress-fill").style.width=
-percent+"%";
-
-document.getElementById("progress-text").innerText=
-`Пройдено: ${percent}%`;
-
-},1000);
-
-}
-
-});
-}
-
-window.saveUser=async function(){
-
-const id=uid.value.trim();
-const name=uname.value.trim();
-const t=endInput.value;
-const departure=departureInput.value;
-const from=fromInput.value.trim();
-const to=toInput.value.trim();
-const info=uinfo.value;
-
-if(!id||!name||!t||!to){
-alert("Заполни все обязательные поля");
-return;
-}
-
-const link=
-location.origin+location.pathname+
-"?user="+encodeURIComponent(id);
-
-await setDoc(doc(db,"investors",id),{
-name,from,to,
-endTime:new Date(t).toISOString(),
-departureTime:departure ?
-new Date(departure).toISOString() :
-new Date(t).toISOString(),
-startTime:serverTimestamp(),
-info:info||"—"
-});
-
-document.getElementById("clientLink").innerText=link;
-document.getElementById("clientLinkBox").style.display="block";
-
-try{
-await navigator.clipboard.writeText(link);
-alert("Сохранено! Ссылка скопирована.");
-}catch{
-alert("Сохранено!");
-}
+    try {
+        await navigator.clipboard.writeText(link);
+        alert("Сохранено! Ссылка скопирована.");
+    } catch {
+        alert("Сохранено!");
+    }
 };
 
-window.copyLink=function(){
-navigator.clipboard.writeText(
-document.getElementById("clientLink").innerText
-);
-alert("Ссылка скопирована!");
+window.copyLink = function() {
+    navigator.clipboard.writeText(document.getElementById("clientLink").innerText);
+    alert("Ссылка скопирована!");
 };
 </script>
-
 </body>
 </html>
