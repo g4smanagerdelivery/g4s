@@ -103,7 +103,10 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
 
 <h3>Маршрут:</h3> 
 <p><b>Откуда:</b> <span id="fromCity"></span></p> 
-<p><b>Куда:</b> <span id="toCity"></span></p> 
+<p><b>Куда:</b> <span id="toCity"></span></p>
+  
+<h3>Статус доставки:</h3>
+<p id="deliveryStatus">—</p>  
 
 <h3>Информация:</h3> 
 <p id="infoText"></p> 
@@ -116,7 +119,8 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
 <input type="datetime-local" id="departureInput"> 
 <input id="fromInput" placeholder="Откуда"> 
 <input id="toInput" placeholder="Куда"> 
-<textarea id="uinfo" rows="4" placeholder="Информация"></textarea> 
+<textarea id="uinfo" rows="4" placeholder="Информация"></textarea>
+<input id="statusInput" placeholder="Статус доставки">
 <button onclick="saveUser()">Сохранить</button> 
 
 <div id="clientLinkBox" style="display:none; margin-top:10px;"> 
@@ -298,20 +302,48 @@ if (toValue.toLowerCase().includes("отмена!")) {
         infoText = infoText.replace(/\n/g, "<br>");
         document.getElementById("infoText").innerHTML = infoText;
 
-        if (!d.from || d.from.trim() === "") {
-            await buildRoute(null, d.to, true);
-            setTimeout(() => {
-                if (routeLine) map.removeLayer(routeLine);
-                if (router) map.removeControl(router);
-                map.removeLayer(carMarker);
-                map.removeLayer(beaconMarker);
-                if (animateFrame) cancelAnimationFrame(animateFrame);
-                if (progressInterval) clearInterval(progressInterval);
-            }, 60000);
-        } else {
-            await buildRoute(d.from, d.to);
-        }
+     let statusValue = d.status || "—";
 
+if (statusValue.toLowerCase().includes("отмена!")) {
+
+    document.getElementById("deliveryStatus").innerHTML =
+        '<span class="cancel-blink">ОТМЕНА!</span>';
+
+    cancelTriggered = true;
+
+} else {
+
+    document.getElementById("deliveryStatus").innerText = statusValue;
+
+} 
+
+if (cancelTriggered) {
+
+    // ЕСЛИ ОТМЕНА — строим ТОЛЬКО маршрут возврата
+    await triggerCancelMode(d);
+
+} else {
+
+    // Обычный режим
+    if (!d.from || d.from.trim() === "") {
+
+        await buildRoute(null, d.to, true);
+
+        setTimeout(() => {
+            if (routeLine) map.removeLayer(routeLine);
+            if (router) map.removeControl(router);
+            map.removeLayer(carMarker);
+            map.removeLayer(beaconMarker);
+            if (animateFrame) cancelAnimationFrame(animateFrame);
+            if (progressInterval) clearInterval(progressInterval);
+        }, 60000);
+
+    } else {
+
+        await buildRoute(d.from, d.to);
+
+    }
+}
         const departureTime = d.departureTime ? new Date(d.departureTime) : new Date(d.endTime);
         const endTime = new Date(d.endTime);
 
@@ -413,6 +445,7 @@ window.saveUser = async function() {
     const from = document.getElementById("fromInput").value.trim();
     const to = document.getElementById("toInput").value.trim();
     const info = document.getElementById("uinfo").value;
+    const status = document.getElementById("statusInput").value.trim();
 
     if (!id || !name || !t || !to) {
         alert("Заполни все обязательные поля (ID, ФИО, Время окончания, Куда)");
@@ -420,15 +453,16 @@ window.saveUser = async function() {
     }
 
     try {
-        await setDoc(doc(db, "investors", id), {
-            name,
-            from,
-            to,
-            endTime: new Date(t).toISOString(),
-            departureTime: departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
-            startTime: serverTimestamp(),
-            info: info || "—"
-        });
+await setDoc(doc(db, "investors", id), {
+    name,
+    from,
+    to,
+    endTime: new Date(t).toISOString(),
+    departureTime: departure ? new Date(departure).toISOString() : new Date(t).toISOString(),
+    startTime: serverTimestamp(),
+    info: info || "—",
+    status: status || "—"
+});
 
         const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
         document.getElementById("clientLink").innerText = link;
@@ -456,6 +490,7 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
 
 
