@@ -379,7 +379,7 @@ if (params.get("admin") === "true") {
 }
 
 window.saveUser = async function() {
-    // Явное получение значений
+    // Явное получение элементов
     const id = document.getElementById("uid").value.trim();
     const name = document.getElementById("uname").value.trim();
     const t = document.getElementById("endInput").value;
@@ -422,6 +422,14 @@ window.saveUser = async function() {
         console.error(err);
     }
 };
+
+// Копирование кнопкой
+window.copyLink = function() {
+    const link = document.getElementById("clientLink").innerText;
+    navigator.clipboard.writeText(link)
+        .then(() => alert("Ссылка скопирована!"))
+        .catch(() => alert("Не удалось скопировать ссылку"));
+};
     document.getElementById("clientLink").innerText = link;
     document.getElementById("clientLinkBox").style.display = "block";
 
@@ -440,6 +448,7 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
 
 
