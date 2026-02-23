@@ -298,6 +298,8 @@ document.getElementById("clientName").innerText=d.name;
 document.getElementById("fromCity").innerText=d.from;
 document.getElementById("toCity").innerText=d.to;
 
+let lastFrom = null;
+let lastTo = null;
 let infoText=d.info||"—";
 if(infoText.toLowerCase().includes("отмена!")){
   infoText=infoText.replace(/отмена!/gi,'<span class="cancel-blink">ОТМЕНА!</span>');
@@ -337,6 +339,16 @@ if(d.to && d.to.toLowerCase().includes("отмена")){
 // ===============================
 // 🟢 ОБЫЧНАЯ ЛОГИКА
 // ===============================
+
+// Если маршрут не изменился — ничего не перестраиваем
+if(d.from === lastFrom && d.to === lastTo){
+  return;
+}
+
+// Запоминаем новые значения
+lastFrom = d.from;
+lastTo = d.to;
+
 if(!d.from || d.from.trim() === ""){
 
   await buildRoute(null, d.to, true);
@@ -464,3 +476,4 @@ alert("Ссылка скопирована!");
 
 </body>
 </html>
+
