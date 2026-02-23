@@ -253,18 +253,22 @@ async function triggerCancelMode(d) {
     if (animateFrame) cancelAnimationFrame(animateFrame);
     if (progressInterval) clearInterval(progressInterval);
 
-    // Переворачиваем координаты маршрута
-    routeCoords = routeCoords.slice().reverse();
+    // Берём текущую позицию машины
+    const currentPosition = carMarker.getLatLng();
+
+    // Строим маршрут ОТ текущей точки ДО базы
+    await buildRoute(
+        `${currentPosition.lat},${currentPosition.lng}`,
+        d.from,
+        true
+    );
+
+    if (!routeCoords.length) return;
 
     const cancelStart = new Date();
     const cancelEnd = new Date(cancelStart.getTime() + 60000); // 1 минута
 
     function animateReturn() {
-
-        if (!routeCoords.length) {
-            requestAnimationFrame(animateReturn);
-            return;
-        }
 
         const now = new Date();
         const total = cancelEnd - cancelStart;
