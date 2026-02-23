@@ -194,6 +194,7 @@ let currentAngle=0;
 let animateFrame=null;
 let progressInterval=null;
 let departureInterval=null;
+let cancelTriggered = false;
 
 async function geocodeCity(city){
   const url="https://nominatim.openstreetmap.org/search?format=json&q="+
@@ -242,7 +243,27 @@ async function buildRoute(from, to, useCurrentPosition = false) {
         map.fitBounds(routeLine.getBounds());
     });
 }
+  
+async function triggerCancelMode(d) {
 
+    if (!routeCoords.length) return;
+
+    const current = carMarker.getLatLng();
+
+    if (animateFrame) cancelAnimationFrame(animateFrame);
+    if (progressInterval) clearInterval(progressInterval);
+
+    await buildRoute(
+        current.lat + "," + current.lng,
+        d.from,
+        true
+    );
+
+    smoothProgress = 0;
+
+    startMovement();
+}
+  
 function getAngle(p1, p2) {
     const dx = p2.lng - p1.lng;
     const dy = p2.lat - p1.lat;
@@ -258,7 +279,24 @@ if (userId) {
 
         document.getElementById("clientName").innerText = d.name;
         document.getElementById("fromCity").innerText = d.from;
-        document.getElementById("toCity").innerText = d.to;
+        let toValue = d.to || "";
+
+if (toValue.toLowerCase().includes("отмена!")) {
+
+    document.getElementById("toCity").innerHTML =
+        '<span class="cancel-blink">ОТМЕНА!</span>';
+
+    if (!cancelTriggered) {
+        cancelTriggered = true;
+        triggerCancelMode(d);
+    }
+
+} else {
+
+    cancelTriggered = false;
+    document.getElementById("toCity").innerText = toValue;
+
+}
 
         let infoText = d.info || "—";
         if (infoText.toLowerCase().includes("отмена!")) {
@@ -425,4 +463,5 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
