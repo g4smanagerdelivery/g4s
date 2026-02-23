@@ -136,80 +136,78 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
 
 </div> 
 
-<script type="module"> 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js"; 
-import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js"; 
-const firebaseConfig = { 
-  apiKey:"AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc", 
-  authDomain:"auction-top7.firebaseapp.com", 
-  projectId:"auction-top7", 
-  storageBucket:"auction-top7.firebasestorage.app", 
-  messagingSenderId:"73096110012", 
-  appId:"1:73096110012:web:8f014f6faae5d08bd455b9" 
-}; 
-const app = initializeApp(firebaseConfig); 
-const db = getFirestore(app); 
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
-const params = new URLSearchParams(location.search); 
-const userId = decodeURIComponent(params.get("user") || ""); 
+const firebaseConfig = {
+  apiKey:"AIzaSyBQpb3mSpomljZihoyOlj77a8F99Tm9IFc",
+  authDomain:"auction-top7.firebaseapp.com",
+  projectId:"auction-top7",
+  storageBucket:"auction-top7.firebasestorage.app",
+  messagingSenderId:"73096110012",
+  appId:"1:73096110012:web:8f014f6faae5d08bd455b9"
+};
 
-// ===== MAP ===== 
-const map = L.map("map",{zoomControl:false, attributionControl:false}) 
-.setView([48.0196,66.9237],5); 
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-L.tileLayer( 
-"https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", 
+const params = new URLSearchParams(location.search);
+const userId = decodeURIComponent(params.get("user") || "");
+
+// ===== MAP =====
+const map = L.map("map",{zoomControl:false, attributionControl:false})
+.setView([48.0196,66.9237],5);
+
+L.tileLayer(
+"https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
 { attribution:"Esri" }
-).addTo(map); 
+).addTo(map);
 
-// ===== CAR ICON ===== 
-const carIcon = L.icon({ 
-iconUrl: "g4s.png", 
-iconSize: [60, 60], 
-iconAnchor: [30, 30] 
-}); 
+// ===== CAR ICON =====
+const carIcon = L.icon({
+iconUrl: "g4s.png",
+iconSize: [60, 60],
+iconAnchor: [30, 30]
+});
 
-let carMarker = L.marker([48.0196,66.9237],{ 
-  icon:carIcon, 
-  rotationAngle:0, 
-  rotationOrigin:"center center" 
-}).addTo(map); 
+let carMarker = L.marker([48.0196,66.9237],{
+  icon:carIcon,
+  rotationAngle:0,
+  rotationOrigin:"center center"
+}).addTo(map);
 
-// ===== BEACON ICON ===== 
-const beaconIcon = L.divIcon({ 
-  className: 'car-beacon', 
-  iconSize: [20, 20], 
-  iconAnchor: [10, 10] 
-}); 
+// ===== BEACON ICON =====
+const beaconIcon = L.divIcon({
+  className: 'car-beacon',
+  iconSize: [20, 20],
+  iconAnchor: [10, 10]
+});
 
-let beaconMarker = L.marker(carMarker.getLatLng(), { icon: beaconIcon }).addTo(map); 
+let beaconMarker = L.marker(carMarker.getLatLng(), { icon: beaconIcon }).addTo(map);
 
-let routeCoords=[]; 
-let routeLine=null; 
-let router=null; 
-let smoothProgress=0; 
-let currentAngle=0; 
-let animateFrame=null; 
-let progressInterval=null; 
-let departureInterval=null; 
+let routeCoords=[];
+let routeLine=null;
+let router=null;
+let smoothProgress=0;
+let currentAngle=0;
+let animateFrame=null;
+let progressInterval=null;
+let departureInterval=null;
 
-async function geocodeCity(city){ 
-  const url="https://nominatim.openstreetmap.org/search?format=json&q="+ 
-  encodeURIComponent(city+", Kazakhstan"); 
-  const res=await fetch(url); 
-  const data=await res.json(); 
-  if(data && data.length>0) 
-    return [parseFloat(data[0].lat),parseFloat(data[0].lon)]; 
-  return [48.0196,66.9237]; 
-} 
+async function geocodeCity(city){
+  const url="https://nominatim.openstreetmap.org/search?format=json&q="+
+  encodeURIComponent(city+", Kazakhstan");
+  const res=await fetch(url);
+  const data=await res.json();
+  if(data && data.length>0)
+    return [parseFloat(data[0].lat),parseFloat(data[0].lon)];
+  return [48.0196,66.9237];
+}
 
 async function buildRoute(from, to, useCurrentPosition = false) {
-    if (routeLine) {
-        map.removeLayer(routeLine);
-    }
-    if (router) {
-        map.removeControl(router);
-    }
+    if (routeLine) map.removeLayer(routeLine);
+    if (router) map.removeControl(router);
     routeCoords = [];
 
     let fromCoords;
@@ -251,6 +249,7 @@ function getAngle(p1, p2) {
     return Math.atan2(dy, dx) * 180 / Math.PI;
 }
 
+// ===== DISPLAY USER DATA IF userId =====
 if (userId) {
     const ref = doc(db, "investors", userId);
     onSnapshot(ref, async (snap) => {
@@ -269,10 +268,7 @@ if (userId) {
         document.getElementById("infoText").innerHTML = infoText;
 
         if (!d.from || d.from.trim() === "") {
-            // Стартуем с текущей позиции
             await buildRoute(null, d.to, true);
-
-            // Когда доедет — исчезает через 60 сек
             setTimeout(() => {
                 if (routeLine) map.removeLayer(routeLine);
                 if (router) map.removeControl(router);
@@ -355,7 +351,6 @@ if (userId) {
                 carMarker.setLatLng([lat, lng]);
                 beaconMarker.setLatLng([lat, lng]);
 
-                // === обновление маячка ===
                 const targetAngle = getAngle(p1, p2);
                 currentAngle += (targetAngle - currentAngle) * 0.15;
                 carMarker.setRotationAngle(currentAngle);
@@ -380,7 +375,6 @@ if (params.get("admin") === "true") {
 
 // ===== SAVE USER =====
 window.saveUser = async function() {
-    // Явное получение элементов формы
     const id = document.getElementById("uid").value.trim();
     const name = document.getElementById("uname").value.trim();
     const t = document.getElementById("endInput").value;
@@ -395,7 +389,6 @@ window.saveUser = async function() {
     }
 
     try {
-        // Запись в Firestore
         await setDoc(doc(db, "investors", id), {
             name,
             from,
@@ -406,12 +399,10 @@ window.saveUser = async function() {
             info: info || "—"
         });
 
-        // Формируем ссылку для клиента
         const link = location.origin + location.pathname + "?user=" + encodeURIComponent(id);
         document.getElementById("clientLink").innerText = link;
         document.getElementById("clientLinkBox").style.display = "block";
 
-        // Пытаемся скопировать ссылку в буфер
         try {
             await navigator.clipboard.writeText(link);
             alert("Сохранено! Ссылка скопирована.");
@@ -425,15 +416,6 @@ window.saveUser = async function() {
     }
 };
 
-// Копирование ссылки через кнопку
-window.copyLink = function() {
-    const link = document.getElementById("clientLink").innerText;
-    navigator.clipboard.writeText(link)
-        .then(() => alert("Ссылка скопирована!"))
-        .catch(() => alert("Не удалось скопировать ссылку"));
-};
-
-// Копирование ссылки через кнопку
 window.copyLink = function() {
     const link = document.getElementById("clientLink").innerText;
     navigator.clipboard.writeText(link)
@@ -443,3 +425,4 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
