@@ -241,15 +241,26 @@ async function buildRoute(from, to, useCurrentPosition = false) {
         fitSelectedRoutes: true
     }).addTo(map);
 
-    router.on("routesfound", function(e) {
-        const route = e.routes[0];
-        routeCoords = route.coordinates;
-      
-        originalRouteCoords = routeCoords.slice();
-      
-        routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
-        map.fitBounds(routeLine.getBounds());
-    });
+router.on("routesfound", function(e) {
+
+    const route = e.routes[0];
+
+    // Преобразуем координаты в простой массив {lat, lng}
+    routeCoords = route.coordinates.map(c => ({
+        lat: c.lat,
+        lng: c.lng
+    }));
+
+    // Делаем копию для возврата
+    originalRouteCoords = routeCoords.slice();
+
+    routeLine = L.polyline(
+        routeCoords.map(p => [p.lat, p.lng]),
+        { color: "blue", weight: 5 }
+    ).addTo(map);
+
+    map.fitBounds(routeLine.getBounds());
+});
 }
   
 async function triggerCancelMode(d) {
@@ -530,5 +541,6 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
 
