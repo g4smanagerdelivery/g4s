@@ -115,8 +115,11 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
 <h2>Админ-панель</h2> 
 <input id="uid" placeholder="ID клиента"> 
 <input id="uname" placeholder="ФИО"> 
-<input type="datetime-local" id="endInput"> 
-<input type="datetime-local" id="departureInput"> 
+<label><b>Время отправки:</b></label><br>
+<input type="datetime-local" id="departureInput"><br><br>
+
+<label><b>Время прибытия:</b></label><br>
+<input type="datetime-local" id="endInput"><br><br> 
 <input id="fromInput" placeholder="Откуда"> 
 <input id="toInput" placeholder="Куда">
 <button type="button" onclick="enableMapSelection()">Выбрать на карте</button> 
@@ -598,6 +601,7 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
 
 
