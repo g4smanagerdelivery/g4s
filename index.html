@@ -241,12 +241,30 @@ let cancelTriggered = false;
 
 
 async function geocodeCity(city){
-  const url="https://nominatim.openstreetmap.org/search?format=json&q="+
-  encodeURIComponent(city+", Kazakhstan");
-  const res=await fetch(url);
-  const data=await res.json();
-  if(data && data.length>0)
-    return [parseFloat(data[0].lat),parseFloat(data[0].lon)];
+
+  if (!city) return [48.0196,66.9237];
+
+  // === ЕСЛИ ЭТО КООРДИНАТЫ (lat,lng) ===
+  if (city.includes(",")) {
+    const parts = city.split(",");
+    const lat = parseFloat(parts[0]);
+    const lng = parseFloat(parts[1]);
+
+    if (!isNaN(lat) && !isNaN(lng)) {
+      return [lat, lng];
+    }
+  }
+
+  // === ИНАЧЕ ОБЫЧНЫЙ ПОИСК ГОРОДА ===
+  const url = "https://nominatim.openstreetmap.org/search?format=json&q=" +
+    encodeURIComponent(city + ", Kazakhstan");
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (data && data.length > 0)
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+
   return [48.0196,66.9237];
 }
 
@@ -580,6 +598,7 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
 
 
