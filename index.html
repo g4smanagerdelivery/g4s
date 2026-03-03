@@ -118,7 +118,8 @@ body { margin:0; font-family:Arial; background:#f2f2f2; }
 <input type="datetime-local" id="endInput"> 
 <input type="datetime-local" id="departureInput"> 
 <input id="fromInput" placeholder="Откуда"> 
-<input id="toInput" placeholder="Куда"> 
+<input id="toInput" placeholder="Куда">
+<button type="button" onclick="enableMapSelection()">Выбрать на карте</button> 
 <textarea id="uinfo" rows="4" placeholder="Информация"></textarea>
 <input id="statusInput" placeholder="Статус доставки">
 <button onclick="saveUser()">Сохранить</button> 
@@ -163,6 +164,41 @@ const userId = decodeURIComponent(params.get("user") || "");
 const map = L.map("map",{zoomControl:false, attributionControl:false})
 .setView([48.0196,66.9237],5);
 
+// ===== КЛИК ПО КАРТЕ (ТОЛЬКО В РЕЖИМЕ ВЫБОРА) =====
+map.on("click", function(e) {
+
+    // если режим не включён — ничего не делаем
+    if (!selectionMode) return;
+
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+
+    // выключаем режим выбора
+    selectionMode = false;
+    map.getContainer().style.cursor = "";
+
+    // удаляем старую точку
+    if (destinationMarker) {
+        map.removeLayer(destinationMarker);
+    }
+
+    // ставим новую точку назначения
+    destinationMarker = L.marker([lat, lng]).addTo(map);
+
+    // записываем координаты в поле "Куда"
+    document.getElementById("toInput").value =
+        lat.toFixed(6) + "," + lng.toFixed(6);
+});
+
+window.enableMapSelection = function () {
+
+    selectionMode = true;
+
+    alert("Кликните на карту, чтобы выбрать точку назначения");
+
+    map.getContainer().style.cursor = "crosshair";
+};
+
 L.tileLayer(
 "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
 { attribution:"Esri" }
@@ -193,6 +229,8 @@ let beaconMarker = L.marker(carMarker.getLatLng(), { icon: beaconIcon }).addTo(m
 let routeCoords=[];
 let originalRouteCoords = [];
 let routeLine=null;
+let destinationMarker = null;
+let selectionMode = false;
 let router=null;
 let smoothProgress=0;
 let currentAngle=0;
@@ -200,6 +238,7 @@ let animateFrame=null;
 let progressInterval=null;
 let departureInterval=null;
 let cancelTriggered = false;
+
 
 async function geocodeCity(city){
   const url="https://nominatim.openstreetmap.org/search?format=json&q="+
@@ -541,6 +580,7 @@ window.copyLink = function() {
 </script>
 </body>
 </html>
+
 
 
 
